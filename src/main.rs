@@ -35,7 +35,7 @@ fn main() -> anyhow::Result<()> {
     let options = get_options();
     let language = get_lang(&options.file);
 
-    let (content, exist_) = match fs::exists(&options.file) {
+    let (mut content, exist_) = match fs::exists(&options.file) {
         Ok(e) if e => (fs::read_to_string(&options.file)?, true),
         Ok(_) => (format!(""), false),
         Err(_) => todo!(),
@@ -140,15 +140,24 @@ fn main() -> anyhow::Result<()> {
             match event::read()? {
                 Event::Key(key) if key.code == KeyCode::Esc => break,
                 Event::Key(key) if is_save_pressed(key) => {
-                    let content = editor.get_content();
-                    save_to_file(&content, &options.file)?;
+                    let real_content = editor.get_content();
+                    save_to_file(&real_content, &options.file)?;
                     let mut exist_local = exist_clone.lock().unwrap();
                     let mut unsave_lines = unsave_lines.lock().unwrap();
+                    content = real_content;
                     
                     *exist_local = true;
                     unsave_lines.clear();
                 },
-                Event::Key(key) => editor.input(key, &current_editor_area)?,
+                Event::Key(key) => {
+                    editor.input(key, &current_editor_area)?;
+                    let exist_local = exist_clone.lock().unwrap();
+
+                    if *exist_local && content == editor.get_content() {
+                        let mut unsave_lines = unsave_lines.lock().unwrap();
+                        unsave_lines.clear();
+                    }
+                },
                 Event::Mouse(mouse) => {
                     editor.mouse(mouse, &current_editor_area)?;
                 },
