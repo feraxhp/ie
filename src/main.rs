@@ -1,12 +1,12 @@
+mod command;
+
 use crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, 
-        Event, KeyCode, KeyModifiers, KeyEvent
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers
     },
     execute,
     terminal::{ 
-        disable_raw_mode, 
-        enable_raw_mode,
+        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode
     },
 };
 use ratatui::{
@@ -28,21 +28,15 @@ use ratatui_code_editor::editor::Editor;
 use ratatui_code_editor::theme::vesper;
 use ratatui_code_editor::utils::get_lang;
 
+use crate::command::{TUImode, get_options};
+
 
 fn main() -> anyhow::Result<()> {
-    let args: Vec<String> = std::env::args().collect();
-    
-    // let filename = "README.md";
-    let filename = if args.len() > 1 { &args[1] } 
-    else {
-        eprintln!("Usage: ie <filename>");
-        return Ok(());
-    };
-    
-    let language = get_lang(filename);
+    let options = get_options();
+    let language = get_lang(&options.file);
 
-    let (content, exist_) = match fs::exists(filename) {
-        Ok(e) if e => (fs::read_to_string(filename)?, true),
+    let (content, exist_) = match fs::exists(&options.file) {
+        Ok(e) if e => (fs::read_to_string(&options.file)?, true),
         Ok(_) => (format!(""), false),
         Err(_) => todo!(),
     };
@@ -56,14 +50,21 @@ fn main() -> anyhow::Result<()> {
     
     enable_raw_mode()?;
     execute!(stdout(), EnableMouseCapture)?;
+    if matches!(options.mode, TUImode::FULL) { 
+        execute!(stdout(), EnterAlternateScreen)?; 
+    }
+    
 
     let backend = CrosstermBackend::new(stdout());
-    let mut terminal = Terminal::with_options(
-        backend,
-        TerminalOptions {
-            viewport: Viewport::Inline(8),
-        },
-    )?;
+    let mut terminal = match &options.mode {
+        command::TUImode::INLINE(lines) => Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Inline(lines.clone()),
+            },
+        )?,
+        command::TUImode::FULL => Terminal::new(backend)?,
+    };
 
     terminal.clear()?;
     
@@ -88,7 +89,6 @@ fn main() -> anyhow::Result<()> {
     let unsave_lines = arc_unsave_lines.clone();
     
     loop {
-        
         terminal.draw(|f| {
             let area = f.area();
             
@@ -141,7 +141,7 @@ fn main() -> anyhow::Result<()> {
                 Event::Key(key) if key.code == KeyCode::Esc => break,
                 Event::Key(key) if is_save_pressed(key) => {
                     let content = editor.get_content();
-                    save_to_file(&content, filename)?;
+                    save_to_file(&content, &options.file)?;
                     let mut exist_local = exist_clone.lock().unwrap();
                     let mut unsave_lines = unsave_lines.lock().unwrap();
                     
@@ -163,6 +163,11 @@ fn main() -> anyhow::Result<()> {
         terminal.backend_mut(),
         DisableMouseCapture
     )?;
+    
+    if matches!(options.mode, TUImode::FULL) { 
+        execute!(terminal.backend_mut(), LeaveAlternateScreen)?; 
+    }
+    
     Ok(())
 }
 
