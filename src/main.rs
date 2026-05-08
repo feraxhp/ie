@@ -64,6 +64,8 @@ fn main() -> anyhow::Result<()> {
             viewport: Viewport::Inline(8),
         },
     )?;
+
+    terminal.clear()?;
     
     let theme = vesper();
 
