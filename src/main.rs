@@ -14,7 +14,7 @@ use ratatui::{
         Constraint, 
         Direction, 
         Layout, 
-        Position, Rect
+        Position,
     }, style::{
         Color, 
         Style
@@ -110,15 +110,15 @@ fn main() -> anyhow::Result<()> {
                 let offset = editor.get_offset_y();
                 let current_line = offset + line;
                 
-                let dynamic_color = match *exist_local {
-                    true if unsave_lines.contains(&current_line) => Color::Yellow,
-                    true => Color::LightGreen,
-                    false => Color::Red,
+                let (char, color) = match *exist_local {
+                    true if unsave_lines.contains(&current_line) => ("▎", Color::LightYellow),
+                    true => (" ", Color::Green),
+                    false => ("▎", Color::Red),
                 };
 
                 lines.push(Line::from(Span::styled(
-                    "▎", 
-                    Style::default().fg(dynamic_color)
+                    char, 
+                    Style::default().fg(color)
                 )));
             }
 
