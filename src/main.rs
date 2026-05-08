@@ -15,6 +15,12 @@ use ratatui_code_editor::editor::Editor;
 use ratatui_code_editor::theme::vesper;
 use ratatui_code_editor::utils::get_lang;
 
+enum FileState {
+    NotExisting,
+    UnSaved,
+    Saved,
+}
+
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     
@@ -26,9 +32,9 @@ fn main() -> anyhow::Result<()> {
     
     let language = get_lang(filename);
 
-    let content = match fs::exists(filename) {
-        Ok(e) if e => fs::read_to_string(filename)?,
-        Ok(_) => format!(""),
+    let (content, mut file_state) = match fs::exists(filename) {
+        Ok(e) if e => (fs::read_to_string(filename)?, FileState::Saved),
+        Ok(_) => (format!(""), FileState::NotExisting),
         Err(_) => todo!(),
     };
 
@@ -63,16 +69,16 @@ fn main() -> anyhow::Result<()> {
 
         if event::poll(std::time::Duration::from_millis(100))? {
             match event::read()? {
+                Event::Key(key) if key.code == KeyCode::Esc => break,
+                Event::Key(key) if is_save_pressed(key) => {
+                    file_state = FileState::Saved;
+                    let content = editor.get_content();
+                    save_to_file(&content, filename)?;
+                },
                 Event::Key(key) => {
-                    if key.code == KeyCode::Esc {
-                        break;
-                    } else if is_save_pressed(key) {
-                        let content = editor.get_content();
-                        save_to_file(&content, filename)?;
-                    } else {
-                        editor.input(key, &editor_area)?;
-                    }
-                }
+                    file_state = FileState::UnSaved;
+                    editor.input(key, &editor_area)?;
+                },
                 Event::Mouse(mouse) => {
                     editor.mouse(mouse, &editor_area)?;
                 },
