@@ -5,4 +5,4 @@ without opening a full TUI editor over the terminal.
 
 Realy handy to use as a git inline editor for cherry-pick, ammend's, merge messages ETC
 
-It uses (ratatui-code-editor)[https://crates.io/crates/ratatui-code-editor].
+It uses [ratatui-code-editor](https://crates.io/crates/ratatui-code-editor).
