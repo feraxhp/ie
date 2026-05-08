@@ -35,7 +35,7 @@ fn main() -> anyhow::Result<()> {
     // let filename = "README.md";
     let filename = if args.len() > 1 { &args[1] } 
     else {
-        eprintln!("Usage: et <filename>");
+        eprintln!("Usage: ie <filename>");
         return Ok(());
     };
     
