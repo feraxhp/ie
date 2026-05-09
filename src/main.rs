@@ -33,7 +33,10 @@ use crate::command::{TUImode, get_options};
 
 fn main() -> anyhow::Result<()> {
     let options = get_options();
-    let language = get_lang(&options.file);
+    let language = match options.format {
+        Some(f) => f,
+        None => get_lang(&options.file),
+    };
 
     let (mut content, exist_) = match fs::exists(&options.file) {
         Ok(e) if e => (fs::read_to_string(&options.file)?, true),
