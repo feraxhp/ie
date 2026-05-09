@@ -5,4 +5,13 @@ without opening a full TUI editor over the terminal.
 
 Realy handy to use as a git inline editor for cherry-pick, ammend's, merge messages ETC
 
+![example](./assets/git-amend.png)
+
+## Install
+
+~~~bash
+cargo install ie
+~~~
+
 It uses [ratatui-code-editor](https://crates.io/crates/ratatui-code-editor).
+
