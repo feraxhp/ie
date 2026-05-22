@@ -1,0 +1,10 @@
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  linux:
+    name: Build linux binaries
+    uses: feraxhp/ship-rs/.github/workflows/linux.yml@v0.1.0
+    with: 
+       binary: ie
