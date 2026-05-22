@@ -19,3 +19,17 @@ ratatui-code-editor = "0.0.3"
 [[bin]]
 name = "ie"
 path = "src/main.rs"
+
+[package.metadata.generate-rpm]
+name = "ie"
+url="https://github.com/feraxhp/ie"
+assets = [
+    { source = "target/release/ie", dest = "/usr/bin/ie", mode = "755" },
+]
+
+[package.metadata.deb]
+name = "ie"
+depends="$auto"
+assets = [
+    ["target/release/ie", "usr/bin/", "755"],
+]
