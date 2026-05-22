@@ -8,3 +8,5 @@ jobs:
     uses: feraxhp/ship-rs/.github/workflows/linux.yml@v0.1.0
     with: 
        binary: ie
+    permissions:
+      contents: write

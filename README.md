@@ -1,5 +1,7 @@
 # ie (Inline Editor)
 
+[![.github/workflows/build.yml](https://github.com/feraxhp/ie/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/feraxhp/ie/actions/workflows/build.yml)
+
 `ie` Is a simple, fast terminal editor with sintax highlight to edit a single file without 
 without opening a full TUI editor over the terminal. 
 
