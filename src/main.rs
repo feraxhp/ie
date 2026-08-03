@@ -52,8 +52,8 @@ fn main() -> anyhow::Result<()> {
     );
     
     enable_raw_mode()?;
-    execute!(stdout(), EnableMouseCapture)?;
     if matches!(options.mode, TUImode::FULL) { 
+        execute!(stdout(), EnableMouseCapture)?;
         execute!(stdout(), EnterAlternateScreen)?; 
     }
     
@@ -171,12 +171,12 @@ fn main() -> anyhow::Result<()> {
     
     terminal.clear()?; 
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        DisableMouseCapture
-    )?;
     
     if matches!(options.mode, TUImode::FULL) { 
+        execute!(
+            terminal.backend_mut(),
+            DisableMouseCapture
+        )?;
         execute!(terminal.backend_mut(), LeaveAlternateScreen)?; 
     }
     
