@@ -179,7 +179,7 @@ fn main() -> anyhow::Result<()> {
         )?;
         execute!(terminal.backend_mut(), LeaveAlternateScreen)?; 
     }
-    
+    eprint!("\r");
     Ok(())
 }
 
