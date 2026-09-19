@@ -1,11 +1,9 @@
 mod command;
 
 use crossterm::{
-    event::{
+    cursor::{MoveToPreviousLine, Show}, event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers
-    },
-    execute,
-    terminal::{ 
+    }, execute, terminal::{ 
         EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode
     },
 };
@@ -49,6 +47,7 @@ impl EditMode {
 }
 
 fn main() -> anyhow::Result<()> {
+    let final_cursor_position: usize;
     let options = get_options();
     let language = match options.format {
         Some(f) => f,
@@ -93,7 +92,7 @@ fn main() -> anyhow::Result<()> {
     let mut current_editor_area = ratatui::layout::Rect::default(); 
 
     // Initialize diff mode
-    let mut edit_mode = EditMode::Combine;
+    let mut edit_mode = EditMode::Plain;
     apply_mode(&mut editor, edit_mode);
     if let Some(original) = read_file_from_head(&options.file)? {
         editor.set_original_code(&original)?;
@@ -164,7 +163,10 @@ fn main() -> anyhow::Result<()> {
 
         if event::poll(std::time::Duration::from_millis(100))? {
             match event::read()? {
-                Event::Key(key) if key.code == KeyCode::Esc => break,
+                Event::Key(key) if key.code == KeyCode::Esc => {
+                    final_cursor_position = editor.code_ref().byte_to_line(editor.get_cursor()) + 1;
+                    break;
+                },
                 Event::Key(key) if is_save_pressed(key) => {
                     let real_content = editor.get_content();
                     save_to_file(&real_content, &options.file)?;
@@ -200,12 +202,29 @@ fn main() -> anyhow::Result<()> {
     terminal.clear()?; 
     disable_raw_mode()?;
     
-    if matches!(options.mode, TUImode::FULL) { 
-        execute!(
-            terminal.backend_mut(),
-            DisableMouseCapture
-        )?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)?; 
+    
+    match &options.mode {
+        TUImode::INLINE(line) => {
+            let final_cursor_position = &(final_cursor_position as u16);
+            let line = match line > final_cursor_position {
+                true => *final_cursor_position,
+                false => *line,
+            };
+            if line > 1 {
+                execute!(
+                    stdout(),
+                    MoveToPreviousLine(line - 1),
+                    Show
+                )?;
+            }
+        },
+        TUImode::FULL => {
+            execute!(
+                terminal.backend_mut(),
+                DisableMouseCapture
+            )?;
+            execute!(terminal.backend_mut(), LeaveAlternateScreen)?; 
+        },
     }
     eprint!("\r");
     Ok(())
