@@ -1,4 +1,5 @@
 mod command;
+mod bindings;
 
 use crossterm::{
     cursor::{MoveToPreviousLine, Show}, event::{
@@ -27,7 +28,7 @@ use ratatui_code_editor::editor::Editor;
 use ratatui_code_editor::theme::vesper;
 use ratatui_code_editor::utils::get_lang;
 
-use crate::command::{TUImode, get_options};
+use crate::{bindings::keymap, command::{TUImode, get_options}};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum EditMode {
@@ -164,7 +165,7 @@ fn main() -> anyhow::Result<()> {
         if event::poll(std::time::Duration::from_millis(100))? {
             match event::read()? {
                 Event::Key(key) if key.code == KeyCode::Esc => {
-                    final_cursor_position = editor.code_ref().byte_to_line(editor.get_cursor()) + 1;
+                    final_cursor_position = editor.code_ref().char_to_line(editor.get_cursor()) + 1;
                     break;
                 },
                 Event::Key(key) if is_save_pressed(key) => {
@@ -182,7 +183,7 @@ fn main() -> anyhow::Result<()> {
                     apply_mode(&mut editor, edit_mode);
                     editor.focus(&current_editor_area);
                 },
-                Event::Key(key) => {
+                Event::Key(key) if !keymap(&mut editor, &key) => {
                     editor.input(key, &current_editor_area)?;
                     let exist_local = exist_clone.lock().unwrap();
 
