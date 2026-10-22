@@ -6,16 +6,17 @@ license = "MIT"
 authors = ["feraxhp <feraxhp+gh@gmail.com>"]
 description = "A inline editor TUI to fast edit a file"
 homepage = "https://github.com/feraxhp/ie"
-
+build = "build.rs"
 
 [dependencies]
-anyhow = "1.0.102"
 clap = { version = "4.6.1", features = ["cargo"] }
 clap_complete = { version = "4.6.3" }
 crossterm = "0.29.0"
-git2 = "0.21.0"
+directories = "6.0.0"
+mynox = "0.1.3"
 ratatui = "0.30.0"
-ratatui-code-editor = "0.0.6"
+texera = "0.1.0"
+texera-core = "0.99.2"
 
 [[bin]]
 name = "ie"

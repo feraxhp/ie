@@ -1,0 +1,16 @@
+{
+  "keyword.declaration": "magenta",
+  "keyword": "magenta",
+  "keyword.modifier": "cyan",
+  "keyword.conditional": "red",
+  "property": "blue",
+  "type": "yellow",
+  "string": "green",
+  "number": "yellow",
+  "boolean.true": "yellow",
+  "boolean.false": "red",
+  "variable.parameter": "red",
+  "variable": "white",
+  "operator": "cyan",
+  "comment": "darkgray"
+}

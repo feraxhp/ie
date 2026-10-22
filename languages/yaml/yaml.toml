@@ -1,0 +1,58 @@
+[meta]
+name = "yaml"
+extensions = ["yaml", "yml"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '#.*', token = "comment" },
+    # Document boundaries
+    { match = '---|\.\.\.', token = "punctuation.delimiter" },
+    # Directives
+    { match = '%[a-zA-Z_]+.*', token = "keyword.directive" },
+    # Strings
+    { match = '"', token = "string", push = "double_string" },
+    { match = "'", token = "string", push = "single_string" },
+    # Anchors and aliases
+    { match = '[&*][a-zA-Z0-9_\-]+', token = "variable" },
+    # Tags
+    { match = '![a-zA-Z0-9_\-<!>]+', token = "type" },
+    # Booleans
+    { match = '\b(?:true|false|yes|no|on|off)\b', token = "boolean" },
+    # Null values
+    { match = '\b(?:null|~)\b', token = "constant.builtin" },
+    # Built-in types
+    { match = '\b(?:str|int|float|bool|map|seq)\b', token = "type" },
+    # Numbers
+    { match = '\b0[xX][0-9a-fA-F_]+\b', token = "number" },
+    { match = '\b0[oO][0-7_]+\b', token = "number" },
+    { match = '-?\b\d[\d_]*\.\d[\d_]*(?:[eE][+-]?\d+)?\b', token = "number.float" },
+    { match = '-?\b\d[\d_]*(?:[eE][+-]?\d+)\b', token = "number.float" },
+    { match = '-?\b\d[\d_]*\b', token = "number" },
+    # Keys (mapping key followed by colon)
+    { match = '[a-zA-Z0-9_\-]+', lookahead = '\s*:', token = "keyword" },
+    # Operators and structural indicators
+    { match = '[|>][+-]?', token = "operator" },
+    { match = '[:\-?]', token = "operator" },
+    # Brackets
+    { match = '[\[\]{}]', token = "punctuation.bracket" },
+    # Delimiters
+    { match = ',', token = "punctuation.delimiter" },
+]
+
+[states.double_string]
+pop_on_newline = true
+default_token = "string"
+rules = [
+    { match = '\\(?:[nrt0\\"\x27]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})', token = "string.escape" },
+    { match = '\\.', token = "string.escape" },
+    { match = '"', token = "string", pop = true },
+]
+
+[states.single_string]
+pop_on_newline = true
+default_token = "string"
+rules = [
+    { match = "''", token = "string.escape" },
+    { match = "'", token = "string", pop = true },
+]

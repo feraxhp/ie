@@ -1,0 +1,9 @@
+{
+  "keyword": "magenta",
+  "keyword.declaration": "magenta",
+  "type": "yellow",
+  "string": "green",
+  "number": "yellow",
+  "operator": "cyan",
+  "comment": "darkgray"
+}

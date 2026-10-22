@@ -1,0 +1,14 @@
+{
+  "keyword": "magenta",
+  "keyword.conditional": "red",
+  "keyword.declaration": "magenta",
+  "type": "yellow",
+  "type.branch": "yellow",
+  "type.date": "yellow",
+  "type.change": "yellow",
+  "number": "yellow",
+  "operator": "cyan",
+  "punctuation.bracket": "darkgray",
+  "punctuation.delimiter": "darkgray",
+  "comment": "darkgray"
+}

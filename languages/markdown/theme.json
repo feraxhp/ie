@@ -1,0 +1,10 @@
+{
+  "markup.heading": "yellow",
+  "markup.raw": "green",
+  "markup.bold": "yellow",
+  "markup.italic": "magenta",
+  "punctuation.special": "blue",
+  "punctuation.delimiter": "darkgray",
+  "string": "green",
+  "comment": "darkgray"
+}

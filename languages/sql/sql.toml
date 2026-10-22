@@ -1,0 +1,48 @@
+[meta]
+name = "sql"
+extensions = ["sql"]
+
+[states.root]
+include = ["comments"]
+rules = [
+    # Strings (single-quoted with '' or \' escape)
+    { match = "'(?:[^'\\\n]|\\\\.|'')*'", token = "string" },
+    # Quoted identifiers (double-quoted or backticked)
+    { match = '"(?:[^"\\\n]|\\\\.)*"|`[^`\n]*`', token = "variable" },
+    # Keywords (case-insensitive)
+    { match = '(?i)\b(?:SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|FULL|ON|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|OFFSET|FETCH|CREATE|TABLE|INDEX|VIEW|TRIGGER|FUNCTION|PROCEDURE|DROP|ALTER|ADD|COLUMN|PRIMARY\s+KEY|FOREIGN\s+KEY|REFERENCES|DEFAULT|CHECK|UNIQUE|CONSTRAINT|AS|DISTINCT|UNION|ALL|EXISTS|BETWEEN|LIKE|ILIKE|IN|IS|NOT|AND|OR|CASE|WHEN|THEN|ELSE|END|VALUES|SET|INTO|RETURNING|CASCADE|RESTRICT|BEGIN|COMMIT|ROLLBACK|TRANSACTION|GRANT|REVOKE)\b', token = "keyword" },
+    # Booleans and Null
+    { match = '(?i)\b(?:TRUE|FALSE)\b', token = "boolean" },
+    { match = '(?i)\bNULL\b', token = "constant.builtin" },
+    # Data types
+    { match = '(?i)\b(?:INT|INTEGER|BIGINT|SMALLINT|TINYINT|VARCHAR|CHAR|TEXT|BOOLEAN|BOOL|DATE|TIME|TIMESTAMP|TIMESTAMPTZ|NUMERIC|DECIMAL|FLOAT|REAL|DOUBLE(?:\s+PRECISION)?|SERIAL|BIGSERIAL|UUID|JSON|JSONB|BYTEA|BLOB|ARRAY)\b', token = "type" },
+    # Built-in functions
+    { match = '(?i)\b(?:COUNT|SUM|AVG|MIN|MAX|COALESCE|NOW|CONCAT|SUBSTRING|LOWER|UPPER|TRIM|LENGTH|ROUND|CAST|EXTRACT|GREATEST|LEAST|NULLIF)\b', token = "function.builtin" },
+    # Numbers
+    { match = '\b0x[0-9a-fA-F]+\b', token = "number" },
+    { match = '\b\d+\.\d+(?:[eE][+-]?\d+)?\b', token = "number.float" },
+    { match = '\b\d+\b', token = "number" },
+    # Custom function calls
+    { match = '[a-zA-Z_]\w*', lookahead = '\s*\(', token = "function.call" },
+    # Identifiers
+    { match = '[a-zA-Z_]\w*', token = "variable" },
+    # Multi-character operators
+    { match = '<=|>=|!=|<>|::|\|\|', token = "operator" },
+    # Single-character operators
+    { match = '[-+*/%=<>!&|^~]', token = "operator" },
+    # Delimiters and brackets
+    { match = '[(),;.]', token = "punctuation.delimiter" },
+]
+
+[states.comments]
+rules = [
+    { match = '--.*', token = "comment" },
+    { match = '/\*', token = "comment", push = "block_comment" },
+]
+
+[states.block_comment]
+default_token = "comment"
+rules = [
+    { match = '/\*', token = "comment", push = "block_comment" },
+    { match = '\*/', token = "comment", pop = true },
+]

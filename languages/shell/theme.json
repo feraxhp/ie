@@ -1,0 +1,17 @@
+{
+  "keyword": "magenta",
+  "keyword.directive": "magenta",
+  "keyword.declaration": "magenta",
+  "keyword.conditional": "red",
+  "keyword.repeat": "red",
+  "keyword.return": "red",
+  "shebang": "magenta",
+  "function.builtin": "cyan",
+  "variable": "white",
+  "string": "green",
+  "string.escape": "magenta",
+  "number": "yellow",
+  "operator": "cyan",
+  "punctuation.bracket": "darkgray",
+  "comment": "darkgray"
+}

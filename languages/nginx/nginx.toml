@@ -1,0 +1,25 @@
+[meta]
+name = "nginx"
+extensions = ["nginx"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '#.*', token = "comment" },
+    # Block context keywords
+    { match = '\b(?:http|server|location|upstream|events|types|mail|stream)\b', token = "keyword.declaration" },
+    # Core directives
+    { match = '\b(?:listen|server_name|root|index|proxy_pass|proxy_set_header|proxy_redirect|proxy_buffering|try_files|rewrite|return|alias|access_log|error_log|ssl_certificate|ssl_certificate_key|ssl_protocols|ssl_ciphers|include|fastcgi_pass|fastcgi_param|fastcgi_index|gzip|gzip_types|gzip_comp_level|client_max_body_size|client_body_buffer_size|expires|add_header|deny|allow|sendfile|tcp_nopush|tcp_nodelay|keepalive_timeout|worker_processes|worker_connections|default_type)\b', token = "keyword" },
+    # Nginx variables starting with $
+    { match = '\$[a-zA-Z_]\w*', token = "variable" },
+    # Quoted strings
+    { match = '"(?:[^"\\]|\\.)*"', token = "string" },
+    { match = "'[^']*'", token = "string" },
+    # Numbers and storage / time units
+    { match = '\b\d+(?:s|ms|m|h|d|k|K|m|M|g|G)?\b', token = "number" },
+    # Brackets and delimiters
+    { match = '[{}]', token = "punctuation.bracket" },
+    { match = ';', token = "punctuation.delimiter" },
+    # Locations and operators
+    { match = '~[*]?|\^~|=', token = "operator" },
+]

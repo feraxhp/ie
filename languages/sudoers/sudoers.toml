@@ -1,0 +1,23 @@
+[meta]
+name = "sudoers"
+extensions = ["sudoers"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '^#.*', token = "comment" },
+    # Sudoers alias directives
+    { match = '^\b(?:Defaults|User_Alias|Runas_Alias|Host_Alias|Cmnd_Alias)\b', token = "keyword" },
+    # Special tags and permissions
+    { match = '\b(?:ALL|NOPASSWD|PASSWD|NOEXEC|EXEC|SETENV|NOSETENV|LOG_INPUT|NOLOG_INPUT|LOG_OUTPUT|NOLOG_OUTPUT)\b', token = "keyword.modifier" },
+    # Linux groups (starting with %)
+    { match = '%[a-zA-Z0-9_\-]+', token = "type" },
+    # Users and Identifiers
+    { match = '[a-zA-Z0-9_\-]+', lookahead = '\s*=', token = "variable" },
+    # Command and script paths
+    { match = '/[a-zA-Z0-9_\-\./*]+', token = "string" },
+    # Operators and delimiters
+    { match = '[:=!,]', token = "operator" },
+    # Parentheses
+    { match = '[()]', token = "punctuation.bracket" },
+]

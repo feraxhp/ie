@@ -1,0 +1,40 @@
+[meta]
+name = "shell"
+extensions = ["sh", "bash", "zsh", "fish"]
+
+[states.root]
+rules = [
+    # Shebang line 0 only
+    { match = '^#!.*', token = "keyword.directive", first_line = true },
+    # Comments
+    { match = '#.*', token = "comment" },
+    # Single-quoted string
+    { match = "'[^']*'", token = "string" },
+    # Double-quoted string
+    { match = '"', token = "string", push = "double_string" },
+    # Variables and parameter expansion
+    { match = '\$\{[^}]+\}|\$[a-zA-Z_]\w*|\$[0-9?*@#$!]', token = "variable" },
+    # Keywords
+    { match = '\b(?:if|then|else|elif|fi|case|esac)\b', token = "keyword.conditional" },
+    { match = '\b(?:for|while|until|do|done|select)\b', token = "keyword.repeat" },
+    { match = '\b(?:return|exit)\b', token = "keyword.return" },
+    { match = '\b(?:function|local|export|readonly|declare|typeset)\b', token = "keyword.declaration" },
+    { match = '\b(?:in|time|set|unset|source|alias)\b', token = "keyword" },
+    # Built-in utilities and common shell commands
+    { match = '\b(?:cd|echo|eval|exec|read|pwd|pushd|popd|shift|trap|test|ulimit|umask|ls|cat|grep|sed|awk|mkdir|rm|cp|mv|chmod|chown|find|curl|wget|git|sudo|touch|kill|ps|tar|gzip|cargo)\b', token = "function.builtin" },
+    # Numbers
+    { match = '\b\d+\b', token = "number" },
+    # Operators
+    { match = '2>&1|>>|<<|>&|==|!=|<=|>=|&&|\|\||[-+*/%=<>|&;:!]+', token = "operator" },
+    # Brackets
+    { match = '[(){}\[\]]', token = "punctuation.bracket" },
+]
+
+[states.double_string]
+pop_on_newline = true
+default_token = "string"
+rules = [
+    { match = '\\.', token = "string.escape" },
+    { match = '\$\{[^}]+\}|\$[a-zA-Z_]\w*|\$[0-9?*@#$!]', token = "variable" },
+    { match = '"', token = "string", pop = true },
+]

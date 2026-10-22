@@ -1,0 +1,16 @@
+{
+  "keyword": "magenta",
+  "keyword.declaration": "blue",
+  "keyword.modifier": "yellow",
+  "keyword.return": "red",
+  "keyword.conditional": "red",
+  "keyword.import": "cyan",
+  "function": "cyan",
+  "constant": "yellow",
+  "type": "yellow",
+  "string": "green",
+  "operator": "cyan",
+  "comment": "darkgray",
+  "punctuation.bracket": "darkgray",
+  "punctuation.delimiter": "darkgray"
+}

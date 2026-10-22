@@ -1,0 +1,13 @@
+{
+  "keyword": "magenta",
+  "keyword.conditional": "red",
+  "keyword.declaration": "magenta",
+  "function.definition": "blue",
+  "type": "yellow",
+  "string": "green",
+  "variable": "white",
+  "operator": "cyan",
+  "punctuation.bracket": "darkgray",
+  "punctuation.delimiter": "darkgray",
+  "comment": "darkgray"
+}

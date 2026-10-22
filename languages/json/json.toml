@@ -1,0 +1,46 @@
+[meta]
+name = "json"
+extensions = ["json"]
+
+[states.root]
+include = ["value"]
+
+[states.value]
+rules = [
+    { match = '\{', token = "punctuation.bracket", push = "object_expect_key" },
+    { match = '\[', token = "punctuation.bracket", push = "array" },
+    { match = '"(?:[^"\\]|\\.)*"', token = "string" },
+    { match = '-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?', token = "number" },
+    { match = '\b(?:true)\b', token = "boolean.true" },
+    { match = '\b(?:false)\b', token = "boolean.false" },
+    { match = '\bnull\b', token = "constant.builtin" },
+]
+
+# State 1 inside {}: expects a property key or the closing brace
+[states.object_expect_key]
+rules = [
+    { match = '\}', token = "punctuation.bracket", pop = true },
+    { match = '"(?:[^"\\]|\\.)*"', token = "property", set = "object_expect_colon" },
+]
+
+# State 2 inside {}: expects ':' (even if it is 3 lines below)
+[states.object_expect_colon]
+rules = [
+    { match = ':', token = "punctuation.delimiter", set = "object_expect_value" },
+    { match = '\}', token = "punctuation.bracket", pop = true },
+]
+
+# State 3 inside {}: parses a value, then ',' goes back to expecting a key
+[states.object_expect_value]
+rules = [
+    { match = ',', token = "punctuation.delimiter", set = "object_expect_key" },
+    { match = '\}', token = "punctuation.bracket", pop = true },
+]
+include = ["value"]
+
+[states.array]
+rules = [
+    { match = '\]', token = "punctuation.bracket", pop = true },
+    { match = ',', token = "punctuation.delimiter" },
+]
+include = ["value"]

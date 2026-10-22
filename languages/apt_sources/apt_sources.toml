@@ -1,0 +1,25 @@
+[meta]
+name = "apt_sources"
+extensions = ["sources", "repo"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '^[#;].*', token = "comment" },
+    # Deb package types
+    { match = '^\b(?:deb|deb-src)\b', token = "keyword.declaration" },
+    # Yum / DNF .repo section header [fedora]
+    { match = '^\[[a-zA-Z0-9_\-]+\]', token = "type" },
+    # Deb822 and .repo keys
+    { match = '\b(?:Types|URIs|Suites|Components|Signed-By|Architectures|name|baseurl|mirrorlist|metalink|enabled|gpgcheck|gpgkey|repo_gpgcheck|priority)\b', token = "keyword" },
+    # Options inside [...]
+    { match = '\[[^\]]+\]', token = "type" },
+    # URLs and repository paths
+    { match = '(?:https?|ftp|file)://[^\s]+', token = "string" },
+    # Standard repository components
+    { match = '\b(?:main|universe|restricted|multiverse|contrib|non-free|non-free-firmware)\b', token = "type" },
+    # Numbers
+    { match = '\b\d+\b', token = "number" },
+    # Operators
+    { match = '=', token = "operator" },
+]

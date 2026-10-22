@@ -1,0 +1,24 @@
+[meta]
+name = "caddy"
+extensions = ["caddy", "caddyfile"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '#.*', token = "comment" },
+    # Core directives
+    { match = '\b(?:reverse_proxy|file_server|root|encode|php_fastcgi|header|rewrite|redir|respond|try_files|import|tls|bind|handle|handle_path|handle_errors|route|basicauth|log|request_body)\b', token = "keyword" },
+    # Named matchers
+    { match = '@[a-zA-Z0-9_\-]+', token = "type" },
+    # Placeholders e.g. {http.request.uri} or {env.MY_VAR}
+    { match = '\{[a-zA-Z0-9_.>$]+\}', token = "variable" },
+    # Ports and schemes
+    { match = ':[0-9]+|https?://[^\s]+', token = "type" },
+    # Quoted strings
+    { match = '"(?:[^"\\]|\\.)*"', token = "string" },
+    { match = "'[^']*'", token = "string" },
+    # Numbers
+    { match = '\b\d+(?:s|ms|m|h|d)?\b', token = "number" },
+    # Brackets
+    { match = '[{}]', token = "punctuation.bracket" },
+]

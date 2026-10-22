@@ -1,0 +1,98 @@
+[meta]
+name = "gitrebase"
+extensions = ["rebase"]
+
+[states.root]
+rules = [
+    # Full comment line starting with #
+    { match = '^[ \t]*#', token = "comment", push = "comment_line" },
+
+    # Blank lines or indentation
+    { match = '^[ \t]+' },
+
+    # Rebase commands at line start
+    # 1. pick / p
+    { match = '\b(?:pick|p)\b', token = "keyword", push = "command_args" },
+    # 2. reword / r
+    { match = '\b(?:reword|r)\b', token = "keyword.declaration", push = "command_args" },
+    # 3. edit / e
+    { match = '\b(?:edit|e)\b', token = "keyword.declaration", push = "command_args" },
+    # 4. squash / s
+    { match = '\b(?:squash|s)\b', token = "keyword.modifier", push = "command_args" },
+    # 5. fixup / f
+    { match = '\b(?:fixup|f)\b', token = "keyword.modifier", push = "command_args" },
+    # 6. drop / d (destructive: red)
+    { match = '\b(?:drop|d)\b', token = "keyword.return", push = "command_args" },
+    # 7. exec / x
+    { match = '\b(?:exec|x)\b', token = "function", push = "command_exec" },
+    # 8. break / b
+    { match = '\b(?:break|b)\b', token = "keyword.conditional", push = "command_args" },
+    # 9. label / l
+    { match = '\b(?:label|l)\b', token = "keyword.import", push = "command_args" },
+    # 10. reset / t
+    { match = '\b(?:reset|t)\b', token = "keyword.import", push = "command_args" },
+    # 11. merge / m
+    { match = '\b(?:merge|m)\b', token = "keyword.import", push = "command_args" },
+    # 12. update-ref / u
+    { match = '\b(?:update-ref|u)\b', token = "keyword.import", push = "command_args" },
+    # 13. noop
+    { match = '\bnoop\b', token = "keyword", push = "command_args" },
+
+    # Fallback comment if # anywhere
+    { match = '#.*', token = "comment" },
+]
+
+[states.command_args]
+pop_on_newline = true
+rules = [
+    # Inline comment to end of line: e.g. # feat: message
+    { match = '#.*', token = "comment" },
+    # Options like -C, -c
+    { match = '\b-[Cc]\b', token = "keyword.modifier" },
+    # Commit SHA (4 to 40 hex digits)
+    { match = '\b[0-9a-fA-F]{4,40}\b', token = "constant" },
+    # Conventional commit types if oneline without #
+    { match = '\b(?:feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert)\b:?', token = "keyword.declaration" },
+    # References / labels
+    { match = 'refs/[a-zA-Z0-9_\-\./]+', token = "type" },
+]
+
+[states.command_exec]
+pop_on_newline = true
+rules = [
+    # Inline comment to end of line
+    { match = '#.*', token = "comment" },
+    # Common tools / commands
+    { match = '\b(?:cargo|make|npm|yarn|pnpm|python|pytest|bash|sh|git)\b', token = "function" },
+    # Strings in exec command
+    { match = '"[^"\n]*"', token = "string" },
+    { match = '\x27[^\x27\n]*\x27', token = "string" },
+]
+
+[states.comment_line]
+pop_on_newline = true
+default_token = "comment"
+rules = [
+    # Critical warnings
+    { match = '\b(?:LOST|aborted)\b', token = "keyword.conditional" },
+
+    # Command descriptions in documentation: e.g. "p, pick", "d, drop"
+    { match = '\bd,\s+drop\b', token = "keyword.return" },
+    { match = '\b(?:p,\s+pick|r,\s+reword|e,\s+edit|s,\s+squash|f,\s+fixup|x,\s+exec|b,\s+break|l,\s+label|t,\s+reset|m,\s+merge|u,\s+update-ref)\b', token = "keyword" },
+
+    # Options in docs
+    { match = '\[-C\s*\|\s*-c\]', token = "keyword.modifier" },
+    { match = '-[Cc]\b', token = "keyword.modifier" },
+
+    # Placeholders in docs: <commit>, <command>, <label>, <ref>, <oneline>
+    { match = '<[a-zA-Z0-9_\-]+>', token = "type" },
+
+    # Quoted commands in docs: 'git rebase --continue'
+    { match = '\x27[^\x27\n]+\x27', token = "string" },
+
+    # Commit hashes in docs: e.g. "Rebase a2b433d..0d48cb1 onto a2b433d"
+    { match = '\b[0-9a-fA-F]{7,40}\b', token = "constant" },
+
+    # Header in docs
+    { match = '\bCommands:\b', token = "type" },
+]

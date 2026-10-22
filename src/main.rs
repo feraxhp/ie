@@ -1,267 +1,365 @@
 mod command;
+mod highlight;
+mod permissions;
+mod system;
 
-use crossterm::{
-    event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers
-    },
-    execute,
-    terminal::{ 
-        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode
-    },
+use std::fs;
+use std::io::{stdout, Write};
+use std::path::PathBuf;
+
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::{
-    Terminal, TerminalOptions, Viewport, backend::CrosstermBackend, layout::{
-        Constraint, 
-        Direction, 
-        Layout, 
-        Position,
-    }, style::{
-        Color, 
-        Style
-    }, text::{
-        Line, 
-        Span
-    }, widgets::Paragraph
+use crossterm::execute;
+use ratatui::backend::CrosstermBackend;
+use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
+use ratatui::{Terminal, TerminalOptions, Viewport};
+use texera::{
+    apply_action, DefaultKeymap, EditorAction, EditorView, EditorViewState, HistoryPlugin, Keymap,
+    LineNumberPlugin, HighlightPlugin, UnsavedLinePlugin,
 };
-use std::{cmp::min, collections::HashSet, fs, io::stdout, sync::{Arc, Mutex}};
-use git2::Repository;
-use ratatui_code_editor::editor::Editor;
-use ratatui_code_editor::theme::vesper;
-use ratatui_code_editor::utils::get_lang;
+use texera_core::{AllowMultipleSelections, State};
 
-use crate::command::{TUImode, get_options};
+use crate::command::{get_options, TUImode};
+use crate::highlight::{detect_language, init_highlighter};
+use crate::permissions::save_file;
+use crate::system::Directories;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum EditMode {
-    Plain,
-    Diff,
-    Combine,
-}
-
-impl EditMode {
-    fn next(self) -> Self {
-        match self {
-            EditMode::Plain => EditMode::Diff,
-            EditMode::Diff => EditMode::Combine,
-            EditMode::Combine => EditMode::Plain,
-        }
+fn main() -> Result<(), mynox::Report> {
+    if let Err(err) = run() {
+        eprintln!("\r");
+        return Err(mynox::Report::from(err));
     }
+    Ok(())
 }
 
-fn main() -> anyhow::Result<()> {
+fn run() -> Result<(), mynox::Error> {
     let options = get_options();
-    let language = match options.format {
-        Some(f) => f,
-        None => get_lang(&options.file),
+    let file_path = PathBuf::from(&options.file);
+
+    // 1. Resolve or create user configuration directory for dynamic language specifications
+    let languages_dir = Directories::languages_dir()?;
+
+    // 2. Initialize HighlightPlugin with built-in languages and user config overrides
+    let mut highlight = init_highlighter(&languages_dir);
+
+    // Determine active syntax highlighting language (via CLI override or auto-detection)
+    let active_lang = match options.format.as_deref() {
+        Some(fmt) => Some(fmt.to_string()),
+        None => detect_language(&file_path).map(|s| s.to_string()),
     };
 
-    let (mut content, exist_) = match fs::exists(&options.file) {
-        Ok(e) if e => (fs::read_to_string(&options.file)?, true),
-        Ok(_) => (format!(""), false),
-        Err(_) => todo!(),
-    };
-
-    let arc_exis: Arc<Mutex<bool>> = Arc::new(Mutex::new(exist_));
-    let exist_clone = arc_exis.clone();
-    
-    let arc_unsave_lines: Arc<Mutex<HashSet<usize>>> = Arc::new(
-        Mutex::new(HashSet::new())
-    );
-    
-    enable_raw_mode()?;
-    if matches!(options.mode, TUImode::FULL) { 
-        execute!(stdout(), EnableMouseCapture)?;
-        execute!(stdout(), EnterAlternateScreen)?; 
+    if let Some(ref lang) = active_lang {
+        highlight.set_active_language(lang);
     }
-    
+
+    // 3. Read existing file or initialize with empty content
+    let (content, file_existed) = if file_path.exists() {
+        let text = fs::read_to_string(&file_path).map_err(|e| {
+            mynox::error!(
+                "fs::read",
+                "Failed to read file",
+                format!("Could not read `{}`: {}", file_path.display(), e)
+                =>
+                "Ensure the file exists and you have **read permissions**"
+            )
+        })?;
+        (text, true)
+    } else {
+        (String::new(), false)
+    };
+
+    // 4. Configure Texera immutable transactional State with history, syntax cache, and multi-selection
+    let mut state = State::from(content.as_str()).with_extensions([
+        HistoryPlugin::extension(None),
+        HighlightPlugin::syntax_extension(),
+        AllowMultipleSelections(true).into(),
+    ]);
+
+    // 5. Configure editor plugins
+    let mut unsaved_lines = UnsavedLinePlugin::new();
+    if file_existed {
+        unsaved_lines.mark_as_saved(&state);
+    } else {
+        // For new files that do not exist yet on disk, mark lines as unsaved
+        unsaved_lines.saved_snapshot = Some(Vec::new());
+        unsaved_lines.check_dirty_lines(&state);
+    }
+
+    let keymap = DefaultKeymap::new();
+    let mut view_state = EditorViewState::new();
+    let mut permission_error: Option<String> = None;
+    let mut first_line_row: Option<u16> = None;
+
+    // 6. Initialize terminal according to selected mode (inline vs fullscreen)
+    enable_raw_mode().map_err(|e| {
+        mynox::error!(
+            "tui::raw_mode",
+            "Terminal initialization error",
+            format!("Failed to enable **raw mode**: {}", e)
+        )
+    })?;
+
+    if matches!(options.mode, TUImode::FULL) {
+        let mut out = stdout();
+        execute!(out, EnterAlternateScreen).map_err(|e| {
+            mynox::error!(
+                "tui::screen",
+                "Terminal initialization error",
+                format!("Failed to enter **alternate screen**: {}", e)
+            )
+        })?;
+    }
+
     let backend = CrosstermBackend::new(stdout());
-    let mut terminal = match &options.mode {
-        command::TUImode::INLINE(lines) => Terminal::with_options(
+    let mut terminal = match options.mode {
+        TUImode::INLINE(lines) => Terminal::with_options(
             backend,
             TerminalOptions {
-                viewport: Viewport::Inline(lines.clone()),
+                viewport: Viewport::Inline(lines),
             },
-        )?,
-        command::TUImode::FULL => Terminal::new(backend)?,
+        )
+        .map_err(|e| {
+            mynox::error!(
+                "tui::terminal",
+                "Terminal initialization error",
+                format!("Failed to initialize inline viewport with `{}` lines: {}", lines, e)
+            )
+        })?,
+        TUImode::FULL => Terminal::new(backend).map_err(|e| {
+            mynox::error!(
+                "tui::terminal",
+                "Terminal initialization error",
+                format!("Failed to initialize fullscreen terminal: {}", e)
+            )
+        })?,
     };
 
-    terminal.clear()?;
-    
-    let theme = vesper();
+    terminal.clear().map_err(|e| {
+        mynox::error!(
+            "tui::terminal",
+            "Terminal initialization error",
+            format!("Failed to clear terminal: {}", e)
+        )
+    })?;
 
-    let mut editor = Editor::new(&language, &content, theme)?;
-    let mut current_editor_area = ratatui::layout::Rect::default(); 
+    let res = run_event_loop(
+        &mut terminal,
+        &mut state,
+        &mut unsaved_lines,
+        &keymap,
+        &mut view_state,
+        &highlight,
+        &file_path,
+        &mut permission_error,
+        &mut first_line_row,
+    );
 
-    // Initialize diff mode
-    let mut edit_mode = EditMode::Combine;
-    apply_mode(&mut editor, edit_mode);
-    if let Some(original) = read_file_from_head(&options.file)? {
-        editor.set_original_code(&original)?;
+    // 7. Clean exit and complete terminal restoration
+    // For inline mode: move cursor to the first line of the editor and clear everything below it
+    if matches!(options.mode, TUImode::INLINE(_)) {
+        if let Some(row) = first_line_row {
+            let _ = execute!(
+                terminal.backend_mut(),
+                crossterm::cursor::MoveTo(0, row),
+                crossterm::terminal::Clear(crossterm::terminal::ClearType::FromCursorDown),
+            );
+        } else {
+            let _ = terminal.clear();
+        }
+    } else {
+        let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
     }
 
-    let us = arc_unsave_lines.clone();
-    let exist_clone2 = arc_exis.clone();
-    editor.set_change_callback(Box::new(move |changes| {
-        let mut unsave_lines = us.lock().unwrap();
-        let exist_local = exist_clone2.lock().unwrap();
+    let _ = disable_raw_mode();
+    let _ = terminal.show_cursor();
+    let _ = terminal.backend_mut().flush();
+    eprint!("\r");
 
-        if *exist_local {
-            for change in changes {
-                _ = unsave_lines.insert(change.0)
-            }
-        }
-    }));
+    res
+}
 
-    let unsave_lines = arc_unsave_lines.clone();
-    
+fn run_event_loop<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    state: &mut State,
+    unsaved_lines: &mut UnsavedLinePlugin,
+    keymap: &DefaultKeymap,
+    view_state: &mut EditorViewState,
+    highlight: &HighlightPlugin,
+    file_path: &PathBuf,
+    permission_error: &mut Option<String>,
+    first_line_row: &mut Option<u16>,
+) -> Result<(), mynox::Error> {
+    let mut show_gutter = true;
+    let mut wrap_enabled = false;
+
     loop {
-        terminal.draw(|f| {
-            let area = f.area();
-            
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Length(1), // Status bar
-                    Constraint::Min(0),    // Editor
-                ])
-                .split(area);
-        
-            let status_line_area = chunks[0];
-            let editor_area = chunks[1];
-            
-            current_editor_area = editor_area;
+        terminal
+            .draw(|f| {
+                let area = f.area();
 
-            let unsave_lines = unsave_lines.lock().unwrap();
-            let exist_local = exist_clone.lock().unwrap();
-            let mut lines = Vec::new();
-            for line in 0..min(status_line_area.height as usize, editor.code_ref().len_lines()) {
-                let offset = editor.get_offset_y();
-                let current_line = offset + line;
-                
-                let (char, color) = match *exist_local {
-                    true if unsave_lines.contains(&current_line) => ("▎", Color::LightYellow),
-                    true => (" ", Color::Green),
-                    false => ("▎", Color::Red),
+                // Track the row of the first rendered line for clean inline exit
+                if first_line_row.is_none() {
+                    *first_line_row = Some(area.y);
+                }
+
+                // If write permissions failed, split vertically to render the red error bar below the editor
+                let (editor_area, error_area) = if let Some(err_msg) = permission_error.as_deref() {
+                    let chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Min(1),    // Editor body
+                            Constraint::Length(1), // Red warning bar
+                        ])
+                        .split(area);
+
+                    (chunks[0], Some((chunks[1], err_msg)))
+                } else {
+                    (area, None)
                 };
 
-                lines.push(Line::from(Span::styled(
-                    char, 
-                    Style::default().fg(color)
-                )));
-            }
+                // Base view with optional wrapping (wrap_enabled = false activates Texera's ultra-fast O(height) unwrapped path)
+                let mut view = EditorView::new()
+                    .with_style(Style::default())
+                    .with_wrap(wrap_enabled)
+                    .with_highlighter(highlight.clone());
 
-            // Render Status bar
-            let slim_bar = Paragraph::new(lines);
-            f.render_widget(slim_bar, status_line_area);
-            
-            // Render editor
-            f.render_widget(&editor, editor_area);
-        
-            if let Some((x, y)) = editor.get_visible_cursor(&editor_area) {
-                f.set_cursor_position(Position::new(x, y));
-            }
-        })?;
+                if show_gutter {
+                    let gutter = LineNumberPlugin::new()
+                        .with_style(Style::default().fg(Color::DarkGray))
+                        .with_marker(unsaved_lines.clone());
+                    view = view.with_gutter(gutter);
+                }
 
-        if event::poll(std::time::Duration::from_millis(100))? {
-            match event::read()? {
-                Event::Key(key) if key.code == KeyCode::Esc => break,
-                Event::Key(key) if is_save_pressed(key) => {
-                    let real_content = editor.get_content();
-                    save_to_file(&real_content, &options.file)?;
-                    let mut exist_local = exist_clone.lock().unwrap();
-                    let mut unsave_lines = unsave_lines.lock().unwrap();
-                    content = real_content;
-                    
-                    *exist_local = true;
-                    unsave_lines.clear();
-                },
-                Event::Key(key) if is_cycle_edit_mode_pressed(key) => {
-                    edit_mode = edit_mode.next();
-                    apply_mode(&mut editor, edit_mode);
-                    editor.focus(&current_editor_area);
-                },
-                Event::Key(key) => {
-                    editor.input(key, &current_editor_area)?;
-                    let exist_local = exist_clone.lock().unwrap();
+                f.render_stateful_widget(view.bind(state), editor_area, view_state);
 
-                    if *exist_local && content == editor.get_content() {
-                        let mut unsave_lines = unsave_lines.lock().unwrap();
-                        unsave_lines.clear();
+                // Render status bar underneath the editor explaining permission denial
+                if let Some((err_rect, msg)) = error_area {
+                    let error_bar = Paragraph::new(Line::from(vec![
+                        Span::styled(
+                            format!(" ✘ {}", msg),
+                            Style::default()
+                                .fg(Color::Red)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]));
+
+                    f.render_widget(error_bar, err_rect);
+                }
+            })
+            .map_err(|e| {
+                mynox::error!(
+                    "tui::draw",
+                    "Render error",
+                    format!("Failed to render user interface: {}", e)
+                )
+            })?;
+
+        // Adaptive polling: poll at 8ms while the syntax parse is catching up with visible lines,
+        // and 50ms once syntax is ready, minimizing CPU usage and stutter
+        let poll_timeout = if view_state.syntax_ready(state) {
+            std::time::Duration::from_millis(50)
+        } else {
+            std::time::Duration::from_millis(8)
+        };
+
+        if event::poll(poll_timeout).map_err(|e| {
+            mynox::error!(
+                "tui::poll",
+                "Event polling error",
+                format!("Error while polling terminal events: {}", e)
+            )
+        })? {
+            if let Event::Key(key_event) = event::read().map_err(|e| {
+                mynox::error!(
+                    "tui::event",
+                    "Event read error",
+                    format!("Failed to read keyboard event: {}", e)
+                )
+            })? {
+                // Exit with Esc or Ctrl+C
+                if key_event.code == KeyCode::Esc
+                    || (key_event.code == KeyCode::Char('c')
+                        && key_event.modifiers.contains(KeyModifiers::CONTROL))
+                {
+                    break;
+                }
+
+                // Toggle Line Gutter with F2
+                if key_event.code == KeyCode::F(2) {
+                    show_gutter = !show_gutter;
+                    continue;
+                }
+
+                // Toggle Soft Line Wrapping with F3
+                if key_event.code == KeyCode::F(3) {
+                    wrap_enabled = !wrap_enabled;
+                    continue;
+                }
+
+                // Save with Ctrl+S using write permission detector to avoid panicking
+                if is_save_pressed(&key_event) {
+                    let current_text = state.doc().to_string();
+                    match save_file(&current_text, file_path) {
+                        Ok(()) => {
+                            unsaved_lines.mark_as_saved(state);
+                            *permission_error = None;
+                        }
+                        Err(err) => {
+                            // Display clean explanation without crashing or panicking
+                            let description = if err.is_category("fs::permission_denied") {
+                                format!(
+                                    "Permission denied: You do not have write permissions to modify `{}`",
+                                    file_path.display()
+                                )
+                            } else {
+                                format!(
+                                    "Permission denied: Unable to modify `{}` ({})",
+                                    file_path.display(),
+                                    err.message()
+                                )
+                            };
+                            *permission_error = Some(description);
+                        }
                     }
-                },
-                Event::Mouse(mouse) => {
-                    editor.mouse(mouse, &current_editor_area)?;
-                },
-                _ => {}
+                    continue;
+                }
+
+                // Dispatch editor actions through Texera
+                if let Some(action) = keymap.action_for_key(&key_event) {
+                    let is_edit = matches!(
+                        action,
+                        EditorAction::InsertChar
+                            | EditorAction::InsertNewline
+                            | EditorAction::InsertTab
+                            | EditorAction::DeleteBackward
+                            | EditorAction::DeleteForward
+                            | EditorAction::Undo
+                            | EditorAction::Redo
+                    );
+
+                    match apply_action(state, action, Some(&key_event)) {
+                        Ok(changed) => {
+                            if changed && is_edit {
+                                unsaved_lines.check_dirty_lines(state);
+                            }
+                        }
+                        Err(_e) => {
+                            // Non-fatal editor action error, continue loop
+                        }
+                    }
+                }
             }
         }
     }
-    
-    terminal.clear()?; 
-    disable_raw_mode()?;
-    
-    if matches!(options.mode, TUImode::FULL) { 
-        execute!(
-            terminal.backend_mut(),
-            DisableMouseCapture
-        )?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)?; 
-    }
-    eprint!("\r");
+
     Ok(())
 }
 
-fn save_to_file(content: &str, path: &str) -> anyhow::Result<()> {
-    use std::io::Write;
-    let mut file = fs::File::create(path)?;
-    file.write_all(content.as_bytes())?;
-    Ok(())
-}
-
-fn is_save_pressed(key: KeyEvent) -> bool {
-    key.modifiers.contains(KeyModifiers::CONTROL) &&
-        key.code == KeyCode::Char('s')
-}
-
-fn is_cycle_edit_mode_pressed(key: KeyEvent) -> bool {
-    key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('f')
-}
-
-fn apply_mode(editor: &mut Editor, mode: EditMode) {
-    match mode {
-        EditMode::Plain => {
-            editor.set_diff_enabled(false);
-            editor.set_diff_focus_enabled(false);
-        }
-        EditMode::Diff => {
-            editor.set_diff_enabled(true);
-            editor.set_diff_focus_context(3);
-            editor.set_diff_focus_enabled(true);
-        }
-        EditMode::Combine => {
-            editor.set_diff_enabled(true);
-            editor.set_diff_focus_enabled(false);
-        }
-    }
-}
-
-fn read_file_from_head(path: &str) -> anyhow::Result<Option<String>> {
-    let try_read = || -> anyhow::Result<String> {
-        let abs_path = std::fs::canonicalize(path)?;
-        let repo = Repository::discover(&abs_path)?;
-        let workdir = repo.workdir().ok_or_else(|| anyhow::anyhow!("bare repo"))?;
-        let rel_path = abs_path.strip_prefix(workdir)?;
-        let head = repo.head()?;
-        let commit = head.peel_to_commit()?;
-        let tree = commit.tree()?;
-        let entry = tree.get_path(rel_path)?;
-        let object = entry.to_object(&repo)?;
-        let blob = object
-            .as_blob()
-            .ok_or_else(|| anyhow::anyhow!("not a blob"))?;
-        let text = std::str::from_utf8(blob.content())?.to_string();
-        Ok(text)
-    };
-
-    Ok(try_read().ok())
+fn is_save_pressed(key: &KeyEvent) -> bool {
+    key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s')
 }

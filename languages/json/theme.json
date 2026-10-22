@@ -1,0 +1,10 @@
+{
+  "punctuation.delimiter": "darkgray",
+  "punctuation.bracket": "magenta",
+  "constant.builtin": "yellow",
+  "boolean.true": "yellow",
+  "boolean.false": "red",
+  "property": "blue",
+  "string": "green",
+  "number": "yellow"
+}

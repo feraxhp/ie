@@ -1,0 +1,7 @@
+{
+  "keyword.conditional": "red",
+  "string": "green",
+  "operator": "cyan",
+  "type": "yellow",
+  "comment": "darkgray"
+}

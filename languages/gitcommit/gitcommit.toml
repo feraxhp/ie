@@ -1,0 +1,47 @@
+[meta]
+name = "gitcommit"
+extensions = ["gitcommit"]
+
+[states.root]
+rules = [
+    # Git comments line context
+    { match = '^\s*#', token = "comment", push = "comment_context" },
+    # Breaking change notices
+    { match = '\bBREAKING[ -]CHANGE\b:?', token = "keyword.conditional" },
+    # Git trailers
+    { match = '\b(?:Signed-off-by|Co-authored-by|Closes|Fixes|Resolves|Reviewed-by|Acked-by|Cc)\b:?', token = "keyword.declaration" },
+    # Conventional commit types at start of line
+    { match = '^(?:feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert|merge)\b', token = "keyword" },
+    # Commit scope e.g. (parser)
+    { match = '\([a-zA-Z0-9_\-]+\)', token = "type" },
+    # Issue / PR references
+    { match = '#\d+\b', token = "number" },
+    # Delimiters and brackets
+    { match = '[:!]', token = "punctuation.delimiter" },
+    { match = '[()]', token = "punctuation.bracket" },
+    { match = '[-#]', token = "operator" },
+]
+
+[states.comment_context]
+pop_on_newline = true
+default_token = "comment"
+rules = [
+    # Date information
+    { match = '\bDate:\s*[^\n]+', token = "type.date" },
+    { match = '\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?\b', token = "type.date" },
+    { match = '\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s+\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}\b', token = "type.date" },
+
+    # Branch information
+    { match = '\bOn branch\s+[^\s\n]+', token = "type.branch" },
+    { match = '\bYour branch\b', token = "type.branch" },
+    { match = '\bHEAD detached (?:at|from)\s+[0-9a-fA-F]+', token = "type.branch" },
+    { match = '\bInitial commit\b', token = "type.branch" },
+    { match = "'[a-zA-Z0-9_\\-\\./]+'", token = "type.branch" },
+
+    # Changes and status headers
+    { match = '\b(?:Changes to be committed|Changes not staged for commit|Changes to be recorded|Untracked files|Unmerged paths):', token = "type.change" },
+    { match = '\b(?:new file|modified|deleted|renamed|copied|typechange|both modified|both added|both deleted):', token = "type.change" },
+    # File paths and names (with slashes or extensions)
+    { match = '[a-zA-Z0-9_\-\.]+\/[a-zA-Z0-9_\-\./]*', token = "type.change" },
+    { match = '[a-zA-Z0-9_\-]+(?:\.[a-zA-Z0-9_\-]+)+', token = "type.change" },
+]

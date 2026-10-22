@@ -1,0 +1,30 @@
+[meta]
+name = "systemd"
+extensions = ["service", "socket", "target", "timer", "mount", "automount", "path", "slice", "scope"]
+
+[states.root]
+rules = [
+    # Comments (# or ;)
+    { match = '^[#;].*', token = "comment" },
+    # Section headers [Unit], [Service], etc.
+    { match = '\[', token = "punctuation.bracket", push = "section" },
+    # Strings
+    { match = '"(?:[^"\\]|\\.)*"', token = "string" },
+    { match = "'[^']*'", token = "string" },
+    # Well-known values and targets
+    { match = '\b(?:simple|forking|oneshot|dbus|notify|idle|always|on-failure|on-abort|on-watchdog|on-success|multi-user|graphical|basic|default|true|false|yes|no|on|off)\b', token = "type" },
+    # Numbers with optional time/size unit
+    { match = '\b\d+(?:s|min|h|d|w|ms|us|M|G|K)?\b', token = "number" },
+    # Keys before '='
+    { match = '[a-zA-Z0-9_\-]+', lookahead = '\s*=', token = "keyword" },
+    # File paths and environment variables
+    { match = '[a-zA-Z0-9_\-\./@]+', token = "variable" },
+    # Assignment
+    { match = '=', token = "operator" },
+]
+
+[states.section]
+rules = [
+    { match = '\]', token = "punctuation.bracket", pop = true },
+    { match = '[a-zA-Z0-9_\-]+', token = "type" },
+]

@@ -1,0 +1,21 @@
+[meta]
+name = "diff"
+extensions = ["diff", "patch"]
+
+[states.root]
+rules = [
+    # Chunk headers e.g. @@ -1,5 +1,6 @@
+    { match = '^@@\s*-[0-9,]+\s*\+[0-9,]+\s*@@.*', token = "operator" },
+    # Git diff metadata headers
+    { match = '^diff\s+--git.*', token = "type" },
+    { match = '^index\s+[0-9a-fA-F]+\.\.[0-9a-fA-F]+.*', token = "type" },
+    { match = '^---(?:\s+.*)?', token = "type" },
+    { match = '^\+\+\+(?:\s+.*)?', token = "type" },
+    { match = '^(?:new file mode|deleted file mode|similarity index|rename from|rename to).*', token = "type" },
+    # Added lines
+    { match = '^\+.*', token = "string" },
+    # Deleted lines
+    { match = '^-.*', token = "keyword.conditional" },
+    # Context comments
+    { match = '^#.*', token = "comment" },
+]

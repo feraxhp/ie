@@ -1,0 +1,28 @@
+[meta]
+name = "dockerfile"
+extensions = ["dockerfile"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '^#.*', token = "comment" },
+    # Parser directives e.g. # syntax=docker/dockerfile:1
+    { match = '^#\s*(?:syntax|escape)\s*=.*', token = "keyword.directive", first_line = true },
+    # Instructions at start of line
+    { match = '^\b(?:FROM|RUN|CMD|LABEL|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL)\b', token = "keyword" },
+    # Instruction alias
+    { match = '\bAS\b', token = "keyword" },
+    # Flags e.g. --from=builder, --chown=user:group, --interval=30s
+    { match = '--[a-zA-Z0-9_\-]+(?:=[^\s]+)?', token = "type" },
+    # Environment variables
+    { match = '\$\{[^}]+\}|\$[a-zA-Z_]\w*', token = "variable" },
+    # Strings
+    { match = '"(?:[^"\\]|\\.)*"', token = "string" },
+    { match = "'[^']*'", token = "string" },
+    # Numbers and units
+    { match = '\b\d+(?:s|m|h|ms)?\b', token = "number" },
+    # JSON array brackets in exec form
+    { match = '[\[\],]', token = "punctuation.bracket" },
+    # Operators
+    { match = '&&|\|\||\\|[=:]', token = "operator" },
+]

@@ -1,0 +1,30 @@
+[meta]
+name = "ini"
+extensions = ["ini", "conf"]
+
+[states.root]
+rules = [
+    # Comments (# or ;)
+    { match = '^[#;].*', token = "comment" },
+    # Section [SectionName]
+    { match = '\[', token = "punctuation.bracket", push = "section" },
+    # Strings
+    { match = '"(?:[^"\\]|\\.)*"', token = "string" },
+    { match = "'[^']*'", token = "string" },
+    # Common boolean/state values
+    { match = '\b(?:true|false|yes|no|on|off|enabled|disabled|default|auto|none)\b', token = "type" },
+    # Numbers
+    { match = '\b\d+(?:\.\d+)?\b', token = "number" },
+    # Keys before '=' or ':'
+    { match = '[a-zA-Z0-9_\-\.]+', lookahead = '\s*[=:]', token = "keyword" },
+    # Values / identifiers
+    { match = '[a-zA-Z0-9_\-\.]+', token = "variable" },
+    # Assignment
+    { match = '[=:]', token = "operator" },
+]
+
+[states.section]
+rules = [
+    { match = '\]', token = "punctuation.bracket", pop = true },
+    { match = '[a-zA-Z0-9_\-\.\s]+', token = "type" },
+]

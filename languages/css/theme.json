@@ -1,0 +1,14 @@
+{
+  "keyword": "magenta",
+  "keyword.directive": "magenta",
+  "property": "blue",
+  "type": "yellow",
+  "function.call": "blue",
+  "string": "green",
+  "number": "yellow",
+  "variable": "white",
+  "operator": "cyan",
+  "punctuation.bracket": "darkgray",
+  "punctuation.delimiter": "darkgray",
+  "comment": "darkgray"
+}

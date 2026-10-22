@@ -1,0 +1,17 @@
+[meta]
+name = "gitignore"
+extensions = ["gitignore"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '^#.*', token = "comment" },
+    # Common directory/file patterns
+    { match = '\b(?:node_modules|target|dist|build|vendor|\.env|\.venv|__pycache__|\.DS_Store|coverage|\.idea|\.vscode)\b', token = "keyword" },
+    # Wildcards and glob operators
+    { match = '\*\*|\*|\?|!|/', token = "operator" },
+    # File extensions
+    { match = '\.[a-zA-Z0-9_\-]+', token = "type" },
+    # Path characters
+    { match = '[a-zA-Z0-9_\-]+', token = "variable" },
+]

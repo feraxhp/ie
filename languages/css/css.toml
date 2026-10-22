@@ -1,0 +1,45 @@
+[meta]
+name = "css"
+extensions = ["css", "scss", "sass", "less"]
+
+[states.root]
+include = ["comments"]
+rules = [
+    # Strings
+    { match = '"[^"]*"', token = "string" },
+    { match = "'[^']*'", token = "string" },
+    # At-rules
+    { match = '@[a-zA-Z\-]+', token = "keyword.directive" },
+    # Pseudo-classes and pseudo-elements
+    { match = '::?[a-zA-Z\-]+', token = "type" },
+    # Hex colors
+    { match = '#[0-9a-fA-F]{3,8}\b', token = "number" },
+    # Numbers with units
+    { match = '\b\d+(?:\.\d+)?(?:px|em|rem|vh|vw|vmin|vmax|%|pt|pc|in|cm|mm|deg|rad|grad|turn|s|ms|Hz|kHz|fr|dpi|dpcm|dppx)\b', token = "number" },
+    { match = '\b\d+(?:\.\d+)?\b', token = "number" },
+    # Properties (identifier followed by colon)
+    { match = '[a-zA-Z\-]+', lookahead = '\s*:', token = "property" },
+    # CSS Built-in values
+    { match = '\b(?:auto|none|inherit|initial|unset|revert|block|inline|flex|grid|relative|absolute|fixed|sticky|solid|dashed|dotted|center|transparent|hidden|visible|bold|italic|normal|sans-serif|serif|monospace|pointer|default)\b', token = "type" },
+    # Function calls (e.g. rgb(), var(), calc())
+    { match = '[a-zA-Z\-]+', lookahead = '\s*\(', token = "function.call" },
+    # Generic identifiers
+    { match = '[a-zA-Z\-]+', token = "variable" },
+    # Delimiters and Brackets
+    { match = '[:;!]', token = "punctuation.delimiter" },
+    { match = '[(){}\[\]]', token = "punctuation.bracket" },
+    { match = '[,>+~*]', token = "operator" },
+]
+
+[states.comments]
+rules = [
+    { match = '//.*', token = "comment" },
+    { match = '/\*', token = "comment", push = "block_comment" },
+]
+
+[states.block_comment]
+default_token = "comment"
+rules = [
+    { match = '/\*', token = "comment", push = "block_comment" },
+    { match = '\*/', token = "comment", pop = true },
+]

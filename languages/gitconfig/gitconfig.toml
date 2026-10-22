@@ -1,0 +1,30 @@
+[meta]
+name = "gitconfig"
+extensions = ["gitconfig"]
+
+[states.root]
+rules = [
+    # Comments (# or ;)
+    { match = '^[#;].*', token = "comment" },
+    # Section [section] or [section "subsection"]
+    { match = '\[', token = "punctuation.bracket", push = "section" },
+    # Strings
+    { match = '"(?:[^"\\]|\\.)*"', token = "string" },
+    # Known boolean/tri-state values
+    { match = '\b(?:true|false|always|auto|never)\b', token = "type" },
+    # Numbers
+    { match = '\b\d+\b', token = "number" },
+    # Keys before '='
+    { match = '[a-zA-Z0-9_\-]+', lookahead = '\s*=', token = "keyword" },
+    # Values / paths
+    { match = '[a-zA-Z0-9_\-\./@~:]+', token = "variable" },
+    # Assignment
+    { match = '=', token = "operator" },
+]
+
+[states.section]
+rules = [
+    { match = '\]', token = "punctuation.bracket", pop = true },
+    { match = '"(?:[^"\\]|\\.)*"', token = "string" },
+    { match = '[a-zA-Z0-9_\-\.]+', token = "type" },
+]

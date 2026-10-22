@@ -1,0 +1,25 @@
+[meta]
+name = "desktop"
+extensions = ["desktop"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '#.*', token = "comment" },
+    # Section [Desktop Entry]
+    { match = '\[', token = "punctuation.bracket", push = "section" },
+    # Desktop categories and standard values
+    { match = '\b(?:Application|Link|Directory|AudioVideo|Audio|Video|Development|Education|Game|Graphics|Network|Office|Science|Settings|System|Utility|true|false)\b', token = "type" },
+    # Keys with optional locale: Name[es]=...
+    { match = '[a-zA-Z0-9_\-]+(?:\[[a-zA-Z_@]+\])?', lookahead = '\s*=', token = "keyword" },
+    # Assignment
+    { match = '=', token = "operator" },
+    # Semicolon separated lists
+    { match = ';', token = "punctuation.delimiter" },
+]
+
+[states.section]
+rules = [
+    { match = '\]', token = "punctuation.bracket", pop = true },
+    { match = '[a-zA-Z0-9_\-\s]+', token = "type" },
+]

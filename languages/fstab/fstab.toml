@@ -1,0 +1,23 @@
+[meta]
+name = "fstab"
+extensions = ["fstab"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '^[#;].*', token = "comment" },
+    # Device identifiers
+    { match = '\b(?:UUID|LABEL|PARTUUID|PARTLABEL)=[a-zA-Z0-9_\-]+|/dev/[a-zA-Z0-9_\-/]+', token = "keyword" },
+    # Filesystem types
+    { match = '\b(?:ext2|ext3|ext4|btrfs|xfs|vfat|fat|ntfs|swap|nfs|cifs|smbfs|tmpfs|proc|sysfs|devpts|squashfs|zfs|f2fs|overlay|iso9660|auto|none|luks)\b', token = "type" },
+    # Mount options key=value
+    { match = '[a-zA-Z0-9_\-]+=[a-zA-Z0-9_\-/]+', token = "variable" },
+    # Common mount options
+    { match = '\b(?:defaults|noatime|nodiratime|relatime|rw|ro|user|users|nouser|auto|noauto|exec|noexec|suid|nosuid|sync|async|nodev|dev|nofail|_netdev|discard)\b', token = "variable" },
+    # Mount points / paths
+    { match = '/[a-zA-Z0-9_\-\./]*', token = "string" },
+    # Dump and Pass numbers
+    { match = '\b\d+\b', token = "number" },
+    # Delimiters
+    { match = ',', token = "punctuation.delimiter" },
+]

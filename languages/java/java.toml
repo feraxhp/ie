@@ -1,0 +1,83 @@
+[meta]
+name = "java"
+extensions = ["java"]
+
+[states.root]
+include = ["comments"]
+rules = [
+    # Text blocks
+    { match = '"""', token = "string", push = "text_block" },
+    # Strings
+    { match = '"', token = "string", push = "string" },
+    # Characters
+    { match = '\x27(?:\\(?:[nrt0\\"\x27]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4})|[^\x27\\\n])\x27', token = "character" },
+    # Annotations
+    { match = '@[a-zA-Z_]\w*', token = "attribute" },
+    # Keywords
+    { match = '\b(?:if|else|switch|case|default)\b', token = "keyword.conditional" },
+    { match = '\b(?:for|while|do)\b', token = "keyword.repeat" },
+    { match = '\b(?:return|yield|break|continue)\b', token = "keyword.return" },
+    { match = '\b(?:try|catch|finally|throw|throws)\b', token = "keyword.exception" },
+    { match = '\b(?:package|import)\b', token = "keyword.import" },
+    { match = '\b(?:class|interface|enum|record)\b', token = "keyword.declaration" },
+    { match = '\b(?:public|private|protected|static|final|abstract|synchronized|volatile|transient|native|strictfp|sealed|permits)\b', token = "keyword.modifier" },
+    { match = '\b(?:new|instanceof)\b', token = "keyword.operator" },
+    { match = '\b(?:extends|implements|assert|goto|const)\b', token = "keyword" },
+    { match = '\b(?:this|super)\b', token = "variable.builtin" },
+    # Constants
+    { match = '\b(?:true|false|null)\b', token = "constant.builtin" },
+    # Types
+    { match = '\b(?:boolean|byte|char|double|float|int|long|short|void|var)\b', token = "type.builtin" },
+    { match = '\b(?:String|Integer|Long|Boolean|Double|Float|Byte|Short|Character|List|Map|Set|Object|Exception|Throwable|Thread|Future|Class|System|Optional|Arrays|Collections)\b', token = "type" },
+    # Numbers
+    { match = '\b0[xX][0-9a-fA-F_]+[lL]*\b', token = "number" },
+    { match = '\b0[bB][01_]+[lL]*\b', token = "number" },
+    { match = '\b0[0-7_]+[lL]*\b', token = "number" },
+    { match = '\b\d[\d_]*\.\d[\d_]*(?:[eE][+-]?\d+)?[fFdDlL]*\b', token = "number.float" },
+    { match = '\b\d[\d_]*(?:[eE][+-]?\d+)[fFdDlL]*\b', token = "number.float" },
+    { match = '\b\d[\d_]*[fFdDlL]*\b', token = "number" },
+    # Function calls
+    { match = '[a-zA-Z_]\w*', lookahead = '\s*\(', token = "function.call" },
+    # Constants and Types
+    { match = '\b[A-Z][A-Z0-9_]+\b', token = "constant" },
+    { match = '\b[A-Z]\w*\b', token = "type" },
+    # Variables
+    { match = '[a-zA-Z_]\w*', token = "variable" },
+    # Multi-character operators
+    { match = '->|::|<=|>=|==|!=|&&|\|\||\+\+|--|<<=|>>>=|>>=|<<|>>>|>>|\+=|-=|\*=|/=|%=|&=|\|=|\^=', token = "operator" },
+    # Single-character operators
+    { match = '[-+*/%&|^~=<>!?:]', token = "operator" },
+    # Brackets
+    { match = '[(){}\[\]]', token = "punctuation.bracket" },
+    # Delimiters
+    { match = '[,;.]', token = "punctuation.delimiter" },
+]
+
+[states.string]
+pop_on_newline = true
+default_token = "string"
+rules = [
+    { match = '\\(?:[nrt0\\"\x27]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4})', token = "string.escape" },
+    { match = '\\.', token = "string.escape" },
+    { match = '"', token = "string", pop = true },
+]
+
+[states.text_block]
+default_token = "string"
+rules = [
+    { match = '\\.', token = "string.escape" },
+    { match = '"""', token = "string", pop = true },
+]
+
+[states.comments]
+rules = [
+    { match = '//.*', token = "comment" },
+    { match = '/\*', token = "comment", push = "block_comment" },
+]
+
+[states.block_comment]
+default_token = "comment"
+rules = [
+    { match = '/\*', token = "comment", push = "block_comment" },
+    { match = '\*/', token = "comment", pop = true },
+]

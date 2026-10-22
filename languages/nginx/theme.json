@@ -1,0 +1,11 @@
+{
+  "keyword": "magenta",
+  "keyword.declaration": "magenta",
+  "string": "green",
+  "variable": "white",
+  "number": "yellow",
+  "operator": "cyan",
+  "punctuation.bracket": "darkgray",
+  "punctuation.delimiter": "darkgray",
+  "comment": "darkgray"
+}

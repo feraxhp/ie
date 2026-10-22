@@ -1,0 +1,15 @@
+{
+  "keyword": "magenta",
+  "function.builtin": "cyan",
+  "function.call": "blue",
+  "type": "yellow",
+  "string": "green",
+  "boolean": "yellow",
+  "constant.builtin": "yellow",
+  "number": "yellow",
+  "number.float": "yellow",
+  "variable": "white",
+  "operator": "cyan",
+  "punctuation.delimiter": "darkgray",
+  "comment": "darkgray"
+}

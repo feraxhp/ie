@@ -1,0 +1,36 @@
+[meta]
+name = "html"
+extensions = ["html", "htm"]
+
+[states.root]
+rules = [
+    # HTML Comments
+    { match = '<!--', token = "comment", push = "comment" },
+    # Doctype
+    { match = '<![dD][oO][cC][tT][yY][pP][eE][^>]*>', token = "keyword.directive" },
+    # Script tag embedded JS
+    { match = '<script[^>]*>', token = "punctuation.bracket", embed = "javascript", embed_end = '</script>' },
+    # Style tag embedded CSS
+    { match = '<style[^>]*>', token = "punctuation.bracket", embed = "css", embed_end = '</style>' },
+    # Closing tags
+    { match = '</[a-zA-Z0-9_\-]+>', token = "keyword" },
+    # Opening tag starts tag attribute context
+    { match = '<[a-zA-Z0-9_\-]+', token = "keyword", push = "tag" },
+    # Character entities
+    { match = '&[a-zA-Z0-9#]+;', token = "constant.builtin" },
+]
+
+[states.tag]
+rules = [
+    { match = '/>|>', token = "punctuation.bracket", pop = true },
+    { match = '"[^"]*"', token = "string" },
+    { match = "'[^']*'", token = "string" },
+    { match = '=', token = "operator" },
+    { match = '[a-zA-Z0-9_\-]+', token = "property" },
+]
+
+[states.comment]
+default_token = "comment"
+rules = [
+    { match = '-->', token = "comment", pop = true },
+]

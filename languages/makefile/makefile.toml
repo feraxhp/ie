@@ -1,0 +1,29 @@
+[meta]
+name = "makefile"
+extensions = ["mk", "makefile", "just"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '#.*', token = "comment" },
+    # Special built-in targets
+    { match = '^\.(?:PHONY|DEFAULT|PRECIOUS|SECONDARY|INTERMEDIATE|IGNORE|SILENT|EXPORT_ALL_VARIABLES)\b', token = "type" },
+    # Directives
+    { match = '^\b(?:ifeq|ifneq|ifdef|ifndef|else|endif|include|-include|sinclude|export|unexport|override|vpath)\b', token = "keyword.conditional" },
+    # Variable assignment: NAME := value or NAME = value or NAME ?= value or NAME += value
+    { match = '^[a-zA-Z0-9_\-]+', lookahead = '\s*[:?+]?=', token = "keyword.declaration" },
+    # Rule targets: target: prerequisites
+    { match = '^[a-zA-Z0-9_\-\.\/%]+', lookahead = '\s*:', token = "function.definition" },
+    # Macro / variable expansions $(VAR) or ${VAR} or $@, $<, $^, etc.
+    { match = '\$(?:\([a-zA-Z0-9_\-]+\)|\{[a-zA-Z0-9_\-]+\}|[@<^+?%*])', token = "variable" },
+    # Strings
+    { match = '"(?:[^"\\]|\\.)*"', token = "string" },
+    { match = "'[^']*'", token = "string" },
+    # Assignment and target operators
+    { match = ':=|\?=|!=|\+=|=', token = "operator" },
+    { match = ':', token = "punctuation.delimiter" },
+    # Shell commands or parameters
+    { match = '@\w+', token = "keyword" },
+    # Brackets
+    { match = '[(){}\[\]]', token = "punctuation.bracket" },
+]

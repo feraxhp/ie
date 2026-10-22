@@ -1,0 +1,14 @@
+{
+  "keyword": "magenta",
+  "type": "yellow",
+  "string": "green",
+  "string.escape": "magenta",
+  "number": "yellow",
+  "number.float": "yellow",
+  "boolean": "yellow",
+  "variable": "white",
+  "operator": "cyan",
+  "punctuation.bracket": "darkgray",
+  "punctuation.delimiter": "darkgray",
+  "comment": "darkgray"
+}

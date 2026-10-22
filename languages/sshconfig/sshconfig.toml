@@ -1,0 +1,73 @@
+[meta]
+name = "sshconfig"
+extensions = ["sshconfig", "ssh_config"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '^[#;].*', token = "comment" },
+
+    # Host and Match declarations (pushes context to highlight target patterns)
+    { match = '\b(?:Host|Match)\b', token = "keyword.declaration", push = "host_pattern" },
+
+    # Network, Hostname and Proxy routing directives (Blue)
+    { match = '\b(?:HostName|ProxyJump|ProxyCommand|LocalForward|RemoteForward|DynamicForward|GatewayPorts|BindAddress)\b', token = "property" },
+
+    # Authentication and Identity directives (Cyan)
+    { match = '\b(?:User|IdentityFile|IdentitiesOnly|CertificateFile|PreferredAuthentications|PubkeyAuthentication|PasswordAuthentication|KbdInteractiveAuthentication|AuthorizedKeysFile|PermitRootLogin)\b', token = "keyword.modifier" },
+
+    # Connection parameters and tuning (Magenta)
+    { match = '\b(?:Port|ForwardAgent|ForwardX11|ServerAliveInterval|ServerAliveCountMax|TCPKeepAlive|ConnectTimeout|Compression|LogLevel|StrictHostKeyChecking|UserKnownHostsFile|Ciphers|MACs|KexAlgorithms|CheckHostIP|AddKeysToAgent|IdentityAgent|SetEnv|SendEnv)\b', token = "keyword" },
+
+    # Access control and security (Red)
+    { match = '\b(?:AllowUsers|AllowGroups|DenyUsers|DenyGroups|Subsystem|UsePAM|X11Forwarding)\b', token = "keyword.conditional" },
+
+    # Common system usernames
+    { match = '\b(?:root|admin|ubuntu|debian|fedora|arch|git|user|centos|alpine)\b', token = "variable.parameter" },
+
+    # Key types and algorithms
+    { match = '\b(?:ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|ssh-dss|rsa-sha2-256|rsa-sha2-512)\b', token = "type" },
+
+    # Positive and neutral options (Yellow)
+    { match = '\b(?:yes|true|ask|confirm|auto|any)\b', token = "boolean.true" },
+
+    # Negative options (Red)
+    { match = '\b(?:no|false|none|prohibit-password|forced-commands-only)\b', token = "boolean.false" },
+
+    # IPv4 addresses
+    { match = '\b(?:\d{1,3}\.){3}\d{1,3}\b', token = "type" },
+
+    # IPv6 addresses
+    { match = '::1\b|\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){1,7}\b', token = "type" },
+
+    # Domain names with extensions (e.g. github.com, bastion.example.com)
+    { match = '\b[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-\.]+\b', token = "type" },
+
+    # File paths (starting with ~/ or /)
+    { match = '[~/][a-zA-Z0-9_\-\./~%]+', token = "string" },
+
+    # Numbers (ports, intervals, counts)
+    { match = '\b\d+\b', token = "number" },
+
+    # Quoted strings
+    { match = '"(?:[^"\\]|\\.)*"', token = "string" },
+    { match = "'[^']*'", token = "string" },
+
+    # Assignment operator
+    { match = '=', token = "operator" },
+
+    # Standalone hostnames or target identifiers
+    { match = '[a-zA-Z0-9_\-]+', token = "type" },
+]
+
+[states.host_pattern]
+pop_on_newline = true
+default_token = "type"
+rules = [
+    # Comments
+    { match = '#.*', token = "comment" },
+    # Wildcard and pattern matching operators
+    { match = '[*?!]+', token = "operator" },
+    # Hostnames, IPs and pattern names
+    { match = '[a-zA-Z0-9_\-\.]+', token = "type" },
+]

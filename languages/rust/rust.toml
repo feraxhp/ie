@@ -1,0 +1,136 @@
+[meta]
+name = "rust"
+extensions = ["rs"]
+
+[states.root]
+include = ["comments", "keywords", "expressions"]
+rules = [
+    # Shebang: line 0 only
+    { match = '^#!.*', token = "keyword.directive", first_line = true },
+    { match = '\{', token = "punctuation.bracket", push = "block" },
+]
+
+[states.block]
+include = ["comments", "keywords", "expressions"]
+rules = [
+    { match = '\{', token = "punctuation.bracket", push = "block" },
+    { match = '\}', token = "punctuation.bracket", pop = true },
+]
+
+[states.keywords]
+rules = [
+    # Attributes like #[test], #[derive(...)], #![no_std]
+    { match = '#!?\[', token = "punctuation.special", push = "attribute" },
+    # Function declaration starts fn_name context
+    { match = '\bfn\b', token = "keyword.function", push = "fn_name" },
+    # Variable and type declarations
+    { match = '\blet\b', token = "keyword.declaration" },
+    { match = '\b(?:struct|enum|union|trait|impl|type)\b', token = "keyword.declaration" },
+    # Modifiers
+    { match = '\b(?:pub|const|static|extern|unsafe|async|mut|ref|move|default)\b', token = "keyword.modifier" },
+    # Imports / module keywords
+    { match = '\b(?:mod|use|crate|super)\b', token = "keyword.import" },
+    # Control flow keywords
+    { match = '\b(?:if|else|match)\b', token = "keyword.conditional" },
+    { match = '\b(?:for|while|loop|break|continue)\b', token = "keyword.repeat" },
+    { match = '\b(?:return|yield)\b', token = "keyword.return" },
+    { match = '\bawait\b', token = "keyword.coroutine" },
+    # Keyword operators
+    { match = '\b(?:as|where|in|dyn)\b', token = "keyword" },
+    # Built-in self & Self
+    { match = '\bself\b', token = "variable.builtin" },
+    { match = '\bSelf\b', token = "type.builtin" },
+]
+
+[states.fn_name]
+include = ["comments"]
+rules = [
+    { match = '[a-zA-Z_]\w*', token = "function.definition", pop = true },
+    { match = '\s+' },
+    { match = '\(', token = "punctuation.bracket", pop = true },
+    { match = ';', token = "punctuation.delimiter", pop = true },
+    { match = '\}', token = "punctuation.bracket", pop = true },
+]
+
+[states.expressions]
+rules = [
+    # Character literals
+    { match = 'b?\x27(?:\\\\(?:[nrt0\\\\\"\x27]|x[0-9a-fA-F]{2})|[^\x27\\\\\n])\x27', token = "character" },
+    # Raw identifiers: r#type, r#match
+    { match = 'r#[a-zA-Z_]\w*', token = "variable" },
+    # Raw strings with hashes: r#"..."#, br#"..."#, cr#"..."#
+    { match = '(?:b|c)?r#+"', token = "string", push = "raw_string" },
+    # Single-line zero-hash raw strings: r"...", br"..."
+    { match = '(?:b|c)?r"[^"\n]*"', token = "string" },
+    # Normal strings
+    { match = '(?:b|c)?"', token = "string", push = "string" },
+    # Booleans
+    { match = '\b(?:true|false)\b', token = "boolean" },
+    # Built-in primitive types
+    { match = '\b(?:u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize|f32|f64|bool|char|str)\b', token = "type.builtin" },
+    # Standard enum variants & types: Some, None, Ok, Err, Option, Result (Yellow)
+    { match = '\b(?:Some|None|Ok|Err|Option|Result)\b', token = "type" },
+    # Numbers: float, hex, bin, oct, dec
+    { match = '\b0x[0-9a-fA-F_]+(?:[iu](?:8|16|32|64|128|size))?\b', token = "number" },
+    { match = '\b0b[01_]+(?:[iu](?:8|16|32|64|128|size))?\b', token = "number" },
+    { match = '\b0o[0-7_]+(?:[iu](?:8|16|32|64|128|size))?\b', token = "number" },
+    { match = '\b\d[\d_]*\.\d[\d_]*(?:[eE][+-]?\d+)?(?:f32|f64)?\b', token = "number.float" },
+    { match = '\b\d[\d_]*(?:[eE][+-]?\d+)(?:f32|f64)?\b', token = "number.float" },
+    { match = '\b\d[\d_]*(?:[iu](?:8|16|32|64|128|size)|f32|f64)?\b', token = "number" },
+    # Macro invocation
+    { match = '[a-zA-Z_]\w*!', token = "function.macro" },
+    # Function calls
+    { match = '[a-zA-Z_]\w*', lookahead = '\s*\(', token = "function.call" },
+    # Constants
+    { match = '\b[A-Z][A-Z0-9_]+\b', token = "constant" },
+    # Custom Types
+    { match = '\b[A-Z]\w*\b', token = "type" },
+    # Variables
+    { match = '[a-zA-Z_]\w*', token = "variable" },
+    # Multi-char operators
+    { match = '===|==|!=|<=|>=|&&|\|\||->|=>|\+=|-=|\*=|/=|%=|&=|\|=|\^=|<<=|>>=|<<|>>|\.\.=', token = "operator" },
+    # Single-char operators
+    { match = '[-+*/%=<>!&|^~?]', token = "operator" },
+    # Brackets
+    { match = '[(){}\\[\\]]', token = "punctuation.bracket" },
+    # Delimiters
+    { match = '::|[;,.]', token = "punctuation.delimiter" },
+]
+
+[states.string]
+pop_on_newline = true
+default_token = "string"
+rules = [
+    { match = '\\\\(?:[nrt0\\\\\"\x27]|x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]+\})', token = "string.escape" },
+    { match = '\\\\.', token = "string.escape" },
+    { match = '"', token = "string", pop = true },
+]
+
+[states.raw_string]
+default_token = "string"
+rules = [
+    { match = '"#+', token = "string", pop = true },
+]
+
+[states.attribute]
+include = ["comments"]
+rules = [
+    { match = '\]', token = "punctuation.special", pop = true },
+    { match = '[a-zA-Z_]\w*', token = "attribute" },
+    { match = '\b\d+\b', token = "number" },
+    { match = '"', token = "string", push = "string" },
+    { match = '::|[:()=,]', token = "punctuation.delimiter" },
+]
+
+[states.comments]
+rules = [
+    { match = '//.*', token = "comment" },
+    { match = '/\*', token = "comment", push = "block_comment" },
+]
+
+[states.block_comment]
+default_token = "comment"
+rules = [
+    { match = '/\*', token = "comment", push = "block_comment" },
+    { match = '\*/', token = "comment", pop = true },
+]

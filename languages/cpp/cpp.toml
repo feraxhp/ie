@@ -1,0 +1,110 @@
+[meta]
+name = "cpp"
+extensions = ["cpp", "cc", "cxx", "hpp", "hh", "hxx"]
+
+[states.root]
+include = ["comments"]
+rules = [
+    # Preprocessor directives
+    { match = '^#\s*\w+.*', token = "keyword.directive" },
+    # Raw strings (R"(...)" or R"delimiter(...)delimiter")
+    { match = 'R"[a-zA-Z0-9_]*\(', token = "string", push = "raw_string" },
+    # Character literals
+    { match = '\x27(?:\\(?:[nrt0\\"\x27]|x[0-9a-fA-F]{2})|[^\x27\\\n])\x27', token = "character" },
+    # String literals
+    { match = '"', token = "string", push = "string" },
+    # Keywords
+    { match = '\b(?:if|else|switch|case|default)\b', token = "keyword.conditional" },
+    { match = '\b(?:for|while|do)\b', token = "keyword.repeat" },
+    { match = '\b(?:return|goto|break|continue)\b', token = "keyword.return" },
+    { match = '\b(?:throw|try|catch|noexcept)\b', token = "keyword.exception" },
+    { match = '\b(?:class|struct|enum|union|namespace|using|template|typename|typedef|concept|requires)\b', token = "keyword.declaration" },
+    { match = '\b(?:public|private|protected|virtual|override|final|friend|constexpr|consteval|constinit|const|extern|register|static|volatile|inline|restrict|explicit|mutable)\b', token = "keyword.modifier" },
+    { match = '\b(?:operator|new|delete|sizeof|decltype|typeid|static_cast|dynamic_cast|const_cast|reinterpret_cast|static_assert)\b', token = "keyword.operator" },
+    { match = '\b(?:co_await|co_return|co_yield)\b', token = "keyword.coroutine" },
+    { match = '\bthis\b', token = "variable.builtin" },
+    # Constants
+    { match = '\b(?:nullptr|true|false|NULL)\b', token = "constant.builtin" },
+    # Types
+    { match = '\b(?:char|char8_t|char16_t|char32_t|wchar_t|double|float|int|long|short|signed|unsigned|void|bool|auto)\b', token = "type.builtin" },
+    # Keywords
+    { match = '\b(?:if|else|switch|case|default)\b', token = "keyword.conditional" },
+    { match = '\b(?:for|while|do)\b', token = "keyword.repeat" },
+    { match = '\b(?:return|goto|break|continue)\b', token = "keyword.return" },
+    { match = '\b(?:throw|try|catch|noexcept)\b', token = "keyword.exception" },
+    { match = '\b(?:class|struct|enum|union|namespace|using|template|typename|typedef|concept|requires)\b', token = "keyword.declaration" },
+    { match = '\b(?:public|private|protected|virtual|override|final|friend|constexpr|consteval|constinit|const|extern|register|static|volatile|inline|restrict|explicit|mutable)\b', token = "keyword.modifier" },
+    { match = '\b(?:operator|new|delete|sizeof|decltype|typeid|static_cast|dynamic_cast|const_cast|reinterpret_cast|static_assert)\b', token = "keyword.operator" },
+    { match = '\b(?:co_await|co_return|co_yield)\b', token = "keyword.coroutine" },
+    { match = '\bthis\b', token = "variable.builtin" },
+    # Constants
+    { match = '\b(?:nullptr|true|false|NULL)\b', token = "constant.builtin" },
+    # Types
+    { match = '\b(?:char|char8_t|char16_t|char32_t|wchar_t|double|float|int|long|short|signed|unsigned|void|bool|auto)\b', token = "type.builtin" },
+    { match = '\b(?:size_t|ssize_t|int8_t|int16_t|int32_t|int64_t|uint8_t|uint16_t|uint32_t|uint64_t|intptr_t|uintptr_t|ptrdiff_t|FILE)\b', token = "type" },
+    { match = '\b(?:string|wstring|string_view|vector|map|unordered_map|set|unordered_set|unique_ptr|shared_ptr|weak_ptr|pair|tuple|optional|variant|any|array|deque|list|span)\b', token = "type" },
+    { match = '[a-zA-Z_]\w*_t\b', token = "type" },
+    # Numbers
+    { match = '\b0x[0-9a-fA-F_]+[uUlL]*\b', token = "number" },
+    { match = '\b0b[01_]+[uUlL]*\b', token = "number" },
+    { match = '\b0[0-7_]+[uUlL]*\b', token = "number" },
+    { match = '\b\d[\d_]*\.\d[\d_]*(?:[eE][+-]?\d+)?[fFlL]?\b', token = "number.float" },
+    { match = '\b\d[\d_]*(?:[eE][+-]?\d+)[fFlL]?\b', token = "number.float" },
+    { match = '\b\d[\d_]*[uUlL]*\b', token = "number" },
+    # Function calls
+    { match = '[a-zA-Z_]\w*', lookahead = '\s*\(', token = "function.call" },
+    # Constants and Types
+    { match = '\b[A-Z][A-Z0-9_]+\b', token = "constant" },
+    { match = '\b[A-Z]\w*\b', token = "type" },
+    # Variables
+    # Numbers
+    { match = '\b0x[0-9a-fA-F_]+[uUlL]*\b', token = "number" },
+    { match = '\b0b[01_]+[uUlL]*\b', token = "number" },
+    { match = '\b0[0-7_]+[uUlL]*\b', token = "number" },
+    { match = '\b\d[\d_]*\.\d[\d_]*(?:[eE][+-]?\d+)?[fFlL]?\b', token = "number.float" },
+    { match = '\b\d[\d_]*(?:[eE][+-]?\d+)[fFlL]?\b', token = "number.float" },
+    { match = '\b\d[\d_]*[uUlL]*\b', token = "number" },
+    # Function calls
+    { match = '[a-zA-Z_]\w*', lookahead = '\s*\(', token = "function.call" },
+    # Constants and Types
+    { match = '\b[A-Z][A-Z0-9_]+\b', token = "constant" },
+    { match = '\b[A-Z]\w*\b', token = "type" },
+    # Variables
+    { match = '[a-zA-Z_]\w*', token = "variable" },
+    # Multi-character operators
+    { match = '::|->\*|->|<=>|<<=|>>=|<<|>>|<=|>=|==|!=|&&|\|\||\+\+|--|\+=|-=|\*=|/=|%=|&=|\|=|\^=', token = "operator" },
+    # Single-character operators
+    { match = '[-+*/%&|^~=<>!?:]', token = "operator" },
+    # Brackets
+    { match = '[(){}\[\]]', token = "punctuation.bracket" },
+    # Delimiters
+    { match = '[,;.]', token = "punctuation.delimiter" },
+]
+
+[states.raw_string]
+default_token = "string"
+rules = [
+    { match = '\)[a-zA-Z0-9_]*"', token = "string", pop = true },
+]
+
+[states.string]
+pop_on_newline = true
+default_token = "string"
+rules = [
+    { match = '\\(?:[nrt0\\"\x27]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})', token = "string.escape" },
+    { match = '\\.', token = "string.escape" },
+    { match = '"', token = "string", pop = true },
+]
+
+[states.comments]
+rules = [
+    { match = '//.*', token = "comment" },
+    { match = '/\*', token = "comment", push = "block_comment" },
+]
+
+[states.block_comment]
+default_token = "comment"
+rules = [
+    { match = '/\*', token = "comment", push = "block_comment" },
+    { match = '\*/', token = "comment", pop = true },
+]
