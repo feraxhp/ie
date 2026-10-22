@@ -7,15 +7,15 @@ rules = [
     # Headings
     { match = '^#{1,6}\s+.*', token = "markup.heading" },
     # Code fence with language injection
-    { match = '^```\s*([a-zA-Z0-9_-]+)', token = "punctuation.delimiter", embed = "$1", embed_end = '^```\s*$' },
-    { match = '^~~~\s*([a-zA-Z0-9_-]+)', token = "punctuation.delimiter", embed = "$1", embed_end = '^~~~\s*$' },
+    { match = '^\s*```\s*([a-zA-Z0-9_#+-]+)[^\n]*', token = "punctuation.delimiter", embed = "$1", embed_end = '^\s*```\s*$' },
+    { match = '^\s*~~~\s*([a-zA-Z0-9_#+-]+)[^\n]*', token = "punctuation.delimiter", embed = "$1", embed_end = '^\s*~~~\s*$' },
     # Code fence without language
-    { match = '^```\s*$', token = "punctuation.delimiter", embed = "", embed_end = '^```\s*$' },
-    { match = '^~~~\s*$', token = "punctuation.delimiter", embed = "", embed_end = '^~~~\s*$' },
+    { match = '^\s*```[^\n]*', token = "punctuation.delimiter", embed = "", embed_end = '^\s*```\s*$' },
+    { match = '^\s*~~~[^\n]*', token = "punctuation.delimiter", embed = "", embed_end = '^\s*~~~\s*$' },
     # Blockquotes
     { match = '^>\s+.*', token = "comment" },
     # Horizontal rules
-    { match = '^(?:---|\*\*\*|___)\s*$', token = "punctuation.delimiter" },
+    { match = '^(?:---|\\*\\*\\*|___)\s*$', token = "punctuation.delimiter" },
     # List bullets and numbering
     { match = '^\s*(?:[-*+]|\d+\.)\s+', token = "punctuation.special" },
     # Inline code

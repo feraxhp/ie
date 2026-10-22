@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::Path;
-use texera::{include_languaje_dir, LanguageToml, HighlightPlugin, ThemeMap};
+use texera::{include_languaje_dir, HighlightPlugin, LanguageToml, ThemeMap};
 #[cfg(test)]
 use texera::{LanguageRegistry, LexState};
 
@@ -35,6 +35,39 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
             "nginx.conf" => return Some("nginx"),
             "caddyfile" => return Some("caddy"),
             "sources.list" => return Some("apt_sources"),
+
+            // Direct language identifiers & codeblock tags
+            "rust" | "rs" => return Some("rust"),
+            "python" | "python3" | "py" | "pyw" | "pyi" => return Some("python"),
+            "javascript" | "js" | "mjs" | "cjs" | "jsx" => return Some("javascript"),
+            "typescript" | "ts" | "mts" | "cts" | "tsx" => return Some("typescript"),
+            "c" | "h" => return Some("c"),
+            "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" | "c++" => return Some("cpp"),
+            "c_sharp" | "csharp" | "c#" | "cs" => return Some("c_sharp"),
+            "go" | "golang" => return Some("go"),
+            "kotlin" | "kt" | "kts" => return Some("kotlin"),
+            "java" => return Some("java"),
+            "html" | "htm" => return Some("html"),
+            "css" | "scss" | "sass" | "less" => return Some("css"),
+            "json" => return Some("json"),
+            "toml" => return Some("toml"),
+            "yaml" | "yml" => return Some("yaml"),
+            "shell" | "bash" | "zsh" | "fish" | "sh" => return Some("shell"),
+            "markdown" | "md" => return Some("markdown"),
+            "lua" => return Some("lua"),
+            "sql" => return Some("sql"),
+            "diff" | "patch" => return Some("diff"),
+            "docker" => return Some("dockerfile"),
+            "make" | "mk" | "mak" => return Some("makefile"),
+            "rebase" => return Some("gitrebase"),
+            "commit" => return Some("gitcommit"),
+            "env" | "dotenv" => return Some("env"),
+            "desktop" => return Some("desktop"),
+            "systemd" => return Some("systemd"),
+            "ini" | "conf" => return Some("ini"),
+            "nginx" => return Some("nginx"),
+            "caddy" => return Some("caddy"),
+            "apt" | "apt_sources" | "sources" | "repo" => return Some("apt_sources"),
             _ => {}
         }
         if lower.starts_with("git-rebase") {
@@ -59,44 +92,174 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         let ext_lower = ext.to_ascii_lowercase();
         return match ext_lower.as_str() {
-            "rs" => Some("rust"),
-            "kt" | "kts" => Some("kotlin"),
-            "js" | "mjs" | "cjs" | "jsx" => Some("javascript"),
-            "ts" | "mts" | "cts" | "tsx" => Some("typescript"),
-            "py" | "pyw" | "pyi" => Some("python"),
-            "go" => Some("go"),
+            "rs" | "rust" => Some("rust"),
+            "kt" | "kts" | "kotlin" => Some("kotlin"),
+            "js" | "mjs" | "cjs" | "jsx" | "javascript" => Some("javascript"),
+            "ts" | "mts" | "cts" | "tsx" | "typescript" => Some("typescript"),
+            "py" | "pyw" | "pyi" | "python" | "python3" => Some("python"),
+            "go" | "golang" => Some("go"),
             "c" | "h" => Some("c"),
-            "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" => Some("cpp"),
-            "cs" => Some("c_sharp"),
+            "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" | "c++" => Some("cpp"),
+            "cs" | "csharp" | "c_sharp" | "c#" => Some("c_sharp"),
             "java" => Some("java"),
             "html" | "htm" => Some("html"),
             "css" | "scss" | "sass" | "less" => Some("css"),
             "json" => Some("json"),
             "toml" => Some("toml"),
             "yaml" | "yml" => Some("yaml"),
-            "sh" | "bash" | "zsh" | "fish" => Some("shell"),
+            "sh" | "bash" | "zsh" | "fish" | "shell" => Some("shell"),
             "md" | "markdown" => Some("markdown"),
             "lua" => Some("lua"),
             "sql" => Some("sql"),
             "diff" | "patch" => Some("diff"),
-            "rebase" => Some("gitrebase"),
-            "mk" | "mak" => Some("makefile"),
-            "dockerfile" => Some("dockerfile"),
-            "env" => Some("env"),
-            "sshconfig" | "ssh_config" => Some("sshconfig"),
+            "rebase" | "gitrebase" => Some("gitrebase"),
+            "commit" | "gitcommit" => Some("gitcommit"),
+            "mk" | "mak" | "make" | "makefile" => Some("makefile"),
+            "dockerfile" | "docker" => Some("dockerfile"),
+            "env" | "dotenv" => Some("env"),
+            "sshconfig" | "ssh_config" | "ssh" => Some("sshconfig"),
             // Linux system files
             "desktop" => Some("desktop"),
             "service" | "socket" | "target" | "timer" | "mount" | "automount" | "path"
-            | "slice" | "scope" => Some("systemd"),
+            | "slice" | "scope" | "systemd" => Some("systemd"),
             "ini" | "conf" => Some("ini"),
             "nginx" => Some("nginx"),
             "caddy" | "caddyfile" => Some("caddy"),
-            "sources" | "repo" => Some("apt_sources"),
+            "sources" | "repo" | "apt_sources" | "apt" => Some("apt_sources"),
             _ => None,
         };
     }
 
     None
+}
+
+/// Resolves a codeblock language identifier or alias to a canonical language name.
+/// Reuses `detect_language` both as a direct file/path name and as a file extension.
+pub fn resolve_codeblock_language(tag: &str) -> Option<&'static str> {
+    let clean = tag.trim();
+    if clean.is_empty() {
+        return None;
+    }
+    // 1. Direct path/file name match
+    if let Some(lang) = detect_language(Path::new(clean)) {
+        return Some(lang);
+    }
+    // 2. Extension match (e.g. "file.<tag>")
+    let dummy = format!("file.{}", clean);
+    if let Some(lang) = detect_language(Path::new(&dummy)) {
+        return Some(lang);
+    }
+    None
+}
+
+/// Returns the built-in TOML grammar source for the given canonical language name.
+pub fn get_builtin_toml(lang: &str) -> Option<&'static str> {
+    match lang {
+        "apt_sources" => Some(include_str!("../languages/apt_sources/apt_sources.toml")),
+        "c" => Some(include_str!("../languages/c/c.toml")),
+        "c_sharp" => Some(include_str!("../languages/c_sharp/c_sharp.toml")),
+        "caddy" => Some(include_str!("../languages/caddy/caddy.toml")),
+        "cpp" => Some(include_str!("../languages/cpp/cpp.toml")),
+        "css" => Some(include_str!("../languages/css/css.toml")),
+        "desktop" => Some(include_str!("../languages/desktop/desktop.toml")),
+        "diff" => Some(include_str!("../languages/diff/diff.toml")),
+        "dockerfile" => Some(include_str!("../languages/dockerfile/dockerfile.toml")),
+        "env" => Some(include_str!("../languages/env/env.toml")),
+        "fstab" => Some(include_str!("../languages/fstab/fstab.toml")),
+        "gitcommit" => Some(include_str!("../languages/gitcommit/gitcommit.toml")),
+        "gitconfig" => Some(include_str!("../languages/gitconfig/gitconfig.toml")),
+        "gitignore" => Some(include_str!("../languages/gitignore/gitignore.toml")),
+        "gitrebase" => Some(include_str!("../languages/gitrebase/gitrebase.toml")),
+        "go" => Some(include_str!("../languages/go/go.toml")),
+        "hosts" => Some(include_str!("../languages/hosts/hosts.toml")),
+        "html" => Some(include_str!("../languages/html/html.toml")),
+        "ini" => Some(include_str!("../languages/ini/ini.toml")),
+        "java" => Some(include_str!("../languages/java/java.toml")),
+        "javascript" => Some(include_str!("../languages/javascript/javascript.toml")),
+        "json" => Some(include_str!("../languages/json/json.toml")),
+        "kotlin" => Some(include_str!("../languages/kotlin/kotlin.toml")),
+        "lua" => Some(include_str!("../languages/lua/lua.toml")),
+        "makefile" => Some(include_str!("../languages/makefile/makefile.toml")),
+        "markdown" => Some(include_str!("../languages/markdown/markdown.toml")),
+        "nginx" => Some(include_str!("../languages/nginx/nginx.toml")),
+        "python" => Some(include_str!("../languages/python/python.toml")),
+        "rust" => Some(include_str!("../languages/rust/rust.toml")),
+        "shell" => Some(include_str!("../languages/shell/shell.toml")),
+        "sql" => Some(include_str!("../languages/sql/sql.toml")),
+        "sshconfig" => Some(include_str!("../languages/sshconfig/sshconfig.toml")),
+        "sudoers" => Some(include_str!("../languages/sudoers/sudoers.toml")),
+        "systemd" => Some(include_str!("../languages/systemd/systemd.toml")),
+        "toml" => Some(include_str!("../languages/toml/toml.toml")),
+        "typescript" => Some(include_str!("../languages/typescript/typescript.toml")),
+        "yaml" => Some(include_str!("../languages/yaml/yaml.toml")),
+        _ => None,
+    }
+}
+
+/// Loads a language's TOML specification on demand for codeblock syntax highlighting.
+/// Reuses `detect_language` to resolve aliases or extensions to canonical language grammars.
+/// Checks user configuration directory first, then falls back to built-in grammars.
+pub fn load_codeblock_toml(tag: &str, config_dir: &Path) -> Option<String> {
+    let clean = tag.trim();
+    if clean.is_empty() {
+        return None;
+    }
+
+    // Resolve canonical language identifier using detect_language
+    let lang = resolve_codeblock_language(clean).unwrap_or(clean);
+
+    // 1. Check user config overrides first
+    if config_dir.exists() && config_dir.is_dir() {
+        let candidates = [
+            config_dir.join(lang).join(format!("{}.toml", lang)),
+            config_dir.join(lang).join("syntax.toml"),
+            config_dir.join(format!("{}.toml", lang)),
+            config_dir.join(clean).join(format!("{}.toml", clean)),
+            config_dir.join(format!("{}.toml", clean)),
+        ];
+
+        for candidate in &candidates {
+            if candidate.is_file() {
+                if let Ok(content) = fs::read_to_string(candidate) {
+                    return Some(content);
+                }
+            }
+        }
+    }
+
+    // 2. Fall back to built-in language definitions
+    get_builtin_toml(lang)
+        .or_else(|| get_builtin_toml(clean))
+        .map(|s| s.to_string())
+}
+
+/// Populates global fallback theme with standard tokens so embedded codeblocks have colors.
+fn init_global_theme(theme: &mut ThemeMap) {
+    let defaults = [
+        ("keyword", ratatui::style::Color::Magenta),
+        ("function", ratatui::style::Color::Blue),
+        ("type", ratatui::style::Color::Yellow),
+        ("string", ratatui::style::Color::Green),
+        ("number", ratatui::style::Color::Yellow),
+        ("boolean", ratatui::style::Color::Yellow),
+        ("constant", ratatui::style::Color::Yellow),
+        ("variable", ratatui::style::Color::White),
+        ("operator", ratatui::style::Color::Cyan),
+        ("comment", ratatui::style::Color::DarkGray),
+        ("punctuation.bracket", ratatui::style::Color::DarkGray),
+        ("punctuation.delimiter", ratatui::style::Color::DarkGray),
+        ("punctuation.special", ratatui::style::Color::Magenta),
+        ("attribute", ratatui::style::Color::Magenta),
+        ("markup.heading", ratatui::style::Color::Yellow),
+        ("markup.raw", ratatui::style::Color::Green),
+        ("markup.bold", ratatui::style::Color::Yellow),
+        ("markup.italic", ratatui::style::Color::Magenta),
+    ];
+    for (token, color) in defaults {
+        if !theme.token_colors.contains_key(token) {
+            theme.set_color(token, color);
+        }
+    }
 }
 
 /// Applies user overrides from `config_dir` onto the given highlighter.
@@ -233,12 +396,22 @@ fn override_or_insert_language(
 
 /// Initializes the syntax highlighter with built-in languages loaded via `include_languaje_dir!`
 /// and extends them at runtime with dynamic user queries and themes from the configuration directory.
+/// Installs an on-demand language loader callback for Markdown codeblock syntax injection.
 pub fn init_highlighter(config_dir: &Path) -> HighlightPlugin {
     // 1. Load built-in project languages using the Texera proc-macro
     let mut highlight = include_languaje_dir!("languages");
 
+    // Initialize global fallback theme for embedded languages
+    init_global_theme(&mut highlight.global_theme);
+
     // 2. Load dynamic specs with strict precedence: config_dir overrides built-ins
     apply_config_overrides(&mut highlight, config_dir);
+
+    // 3. Register on-demand loader for codeblocks, resolving languages via detect_language
+    let config_dir_buf = config_dir.to_path_buf();
+    highlight = highlight.with_loader(move |name: &str| {
+        load_codeblock_toml(name, &config_dir_buf)
+    });
 
     highlight
 }
@@ -320,6 +493,41 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_codeblock_language() {
+        assert_eq!(resolve_codeblock_language("rust"), Some("rust"));
+        assert_eq!(resolve_codeblock_language("rs"), Some("rust"));
+        assert_eq!(resolve_codeblock_language("python"), Some("python"));
+        assert_eq!(resolve_codeblock_language("py"), Some("python"));
+        assert_eq!(resolve_codeblock_language("javascript"), Some("javascript"));
+        assert_eq!(resolve_codeblock_language("js"), Some("javascript"));
+        assert_eq!(resolve_codeblock_language("typescript"), Some("typescript"));
+        assert_eq!(resolve_codeblock_language("ts"), Some("typescript"));
+        assert_eq!(resolve_codeblock_language("c++"), Some("cpp"));
+        assert_eq!(resolve_codeblock_language("cpp"), Some("cpp"));
+        assert_eq!(resolve_codeblock_language("c#"), Some("c_sharp"));
+        assert_eq!(resolve_codeblock_language("cs"), Some("c_sharp"));
+        assert_eq!(resolve_codeblock_language("bash"), Some("shell"));
+        assert_eq!(resolve_codeblock_language("sh"), Some("shell"));
+        assert_eq!(resolve_codeblock_language("docker"), Some("dockerfile"));
+        assert_eq!(resolve_codeblock_language("make"), Some("makefile"));
+        assert_eq!(resolve_codeblock_language("rebase"), Some("gitrebase"));
+        assert_eq!(resolve_codeblock_language("unknown_lang_123"), None);
+    }
+
+    #[test]
+    fn test_load_codeblock_toml() {
+        let dummy_dir = PathBuf::from("/tmp/nonexistent_ie_test_dir_123");
+        assert!(load_codeblock_toml("rust", &dummy_dir).is_some());
+        assert!(load_codeblock_toml("rs", &dummy_dir).is_some());
+        assert!(load_codeblock_toml("python", &dummy_dir).is_some());
+        assert!(load_codeblock_toml("py", &dummy_dir).is_some());
+        assert!(load_codeblock_toml("c++", &dummy_dir).is_some());
+        assert!(load_codeblock_toml("c#", &dummy_dir).is_some());
+        assert!(load_codeblock_toml("bash", &dummy_dir).is_some());
+        assert!(load_codeblock_toml("unknown_tag_xyz", &dummy_dir).is_none());
+    }
+
+    #[test]
     fn test_builtin_scm_loaded_with_macro() {
         let dummy_dir = PathBuf::from("/tmp/nonexistent_ie_test_dir_123");
         let highlighter = init_highlighter(&dummy_dir);
@@ -370,6 +578,68 @@ mod tests {
         assert!(highlighter.languages.contains_key("apt_sources"));
         assert!(highlighter.languages.contains_key("lua"));
         assert!(highlighter.languages.contains_key("sql"));
+    }
+
+    #[test]
+    fn test_markdown_codeblocks_on_demand_loader() {
+        let dummy_dir = PathBuf::from("/tmp/nonexistent_ie_test_dir_123");
+        let highlighter = init_highlighter(&dummy_dir);
+
+        let md_lang_id = highlighter
+            .registry()
+            .lang_id("markdown")
+            .expect("markdown must be registered");
+
+        // 1. Line 0: Markdown heading
+        let mut state = LexState::DOC_START;
+        let t0 = highlighter
+            .registry()
+            .tokenize_line_stateful(md_lang_id, "# Code Samples", &mut state);
+        assert!(t0.iter().any(|t| t.1.as_ref() == "markup.heading"));
+
+        // 2. Line 1: Opening code fence with alias "rs"
+        let t1 = highlighter
+            .registry()
+            .tokenize_line_stateful(md_lang_id, "```rs", &mut state);
+        assert!(t1.iter().any(|t| t.1.as_ref() == "punctuation.delimiter"));
+
+        // 3. Line 2: Rust code inside the block
+        let t2 = highlighter
+            .registry()
+            .tokenize_line_stateful(md_lang_id, "fn main() {", &mut state);
+        assert!(t2.iter().any(|t| t.1.as_ref().starts_with("keyword")));
+
+        // 4. Line 3: Closing fence
+        let t3 = highlighter
+            .registry()
+            .tokenize_line_stateful(md_lang_id, "```", &mut state);
+        assert!(t3.iter().any(|t| t.1.as_ref() == "punctuation.delimiter"));
+
+        // 5. Line 4: Code block with alias "py"
+        let _ = highlighter
+            .registry()
+            .tokenize_line_stateful(md_lang_id, "```py", &mut state);
+        let t_py = highlighter
+            .registry()
+            .tokenize_line_stateful(md_lang_id, "def hello():", &mut state);
+        assert!(t_py.iter().any(|t| t.1.as_ref().starts_with("keyword")));
+        let _ = highlighter
+            .registry()
+            .tokenize_line_stateful(md_lang_id, "```", &mut state);
+
+        // 6. Code block with "c++"
+        let _ = highlighter
+            .registry()
+            .tokenize_line_stateful(md_lang_id, "```c++", &mut state);
+        let t_cpp = highlighter
+            .registry()
+            .tokenize_line_stateful(md_lang_id, "int main() {", &mut state);
+        assert!(t_cpp
+            .iter()
+            .any(|t| t.1.as_ref().starts_with("type") || t.1.as_ref().starts_with("keyword")));
+        let _ = highlighter
+            .registry()
+            .tokenize_line_stateful(md_lang_id, "```", &mut state);
     }
 
     #[test]
