@@ -15,5 +15,5 @@ Realy handy to use as a git inline editor for cherry-pick, ammend's, merge messa
 cargo install ie
 ~~~
 
-It uses [ratatui-code-editor](https://crates.io/crates/ratatui-code-editor).
+It uses [texera](https://github.com/feraxhp/texera).
 
