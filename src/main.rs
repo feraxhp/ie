@@ -1,18 +1,24 @@
 mod cache;
 mod command;
+mod editor_actions;
 mod highlight;
+mod keymap;
 mod permissions;
 mod prompt;
+mod search;
 mod system;
 
 use std::io::{stdout, Write};
 use std::path::PathBuf;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{
+    self, Event, KeyCode, KeyModifiers, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+    PushKeyboardEnhancementFlags,
+};
+use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use crossterm::execute;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -20,16 +26,21 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::{Terminal, TerminalOptions, Viewport};
 use texera::{
-    apply_action, DefaultKeymap, EditorAction, EditorView, EditorViewState, HistoryPlugin, Keymap,
-    LineNumberPlugin, HighlightPlugin, UnsavedLinePlugin,
+    apply_action, EditorAction, EditorView, EditorViewState, Gutter, HighlightPlugin,
+    HistoryPlugin, LineNumberPlugin, UnsavedLinePlugin,
 };
 use texera_core::{AllowMultipleSelections, ChangeSpec, State, Text, TransactionSpec};
 
 use crate::cache::Cache;
 use crate::command::{get_options, TUImode};
+use crate::editor_actions::{
+    add_line, clone_lines, delete_lines, move_selection_lines, toggle_comments,
+};
 use crate::highlight::{detect_language, init_highlighter};
+use crate::keymap::{IeAction, IeKeymap};
 use crate::permissions::{check_write_permission, save_file};
 use crate::prompt::prompt_restore;
+use crate::search::{SearchFocus, SearchState};
 use crate::system::{Directories, File};
 
 fn main() -> Result<(), mynox::Report> {
@@ -104,7 +115,7 @@ fn run() -> Result<(), mynox::Error> {
 
     // If restoring cached content, apply the cached edits over the original baseline buffer
     // so Myers diff properly activates dirty line markers
-    if let Some(cached_text) = restored_content {
+    if let Some(ref cached_text) = restored_content {
         let spec = TransactionSpec::default().with_change(
             ChangeSpec::new(
                 0,
@@ -126,7 +137,10 @@ fn run() -> Result<(), mynox::Error> {
         unsaved_lines.check_dirty_lines(&state);
     }
 
-    let keymap = DefaultKeymap::new();
+    // Load active keymap (from keymap.json in config dir or defaults)
+    let keymap = IeKeymap::load_or_default()?;
+    let mut search_state = SearchState::new();
+
     let mut view_state = EditorViewState::new();
     let mut permission_error: Option<String> = None;
     let mut first_line_row: Option<u16> = None;
@@ -139,6 +153,15 @@ fn run() -> Result<(), mynox::Error> {
             format!("Failed to enable **raw mode**: {}", e)
         )
     })?;
+
+    // Enable progressive keyboard enhancement protocol if supported to disambiguate modified keys
+    let _ = execute!(
+        stdout(),
+        PushKeyboardEnhancementFlags(
+            KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+        )
+    );
 
     if matches!(options.mode, TUImode::FULL) {
         let mut out = stdout();
@@ -188,14 +211,18 @@ fn run() -> Result<(), mynox::Error> {
         &mut state,
         &mut unsaved_lines,
         &keymap,
+        &mut search_state,
         &mut view_state,
         &highlight,
         &file_path,
+        active_lang.as_deref(),
         &mut permission_error,
         &mut first_line_row,
     );
 
     // 8. Clean exit and complete terminal restoration
+    let _ = execute!(stdout(), PopKeyboardEnhancementFlags);
+
     // For inline mode: move cursor to the first line of the editor and clear everything below it
     if matches!(options.mode, TUImode::INLINE(_)) {
         if let Some(row) = first_line_row {
@@ -219,14 +246,21 @@ fn run() -> Result<(), mynox::Error> {
     res
 }
 
+enum BottomBarMode<'a> {
+    Search,
+    Error(&'a str),
+}
+
 fn run_event_loop<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     state: &mut State,
     unsaved_lines: &mut UnsavedLinePlugin,
-    keymap: &DefaultKeymap,
+    keymap: &IeKeymap,
+    search_state: &mut SearchState,
     view_state: &mut EditorViewState,
     highlight: &HighlightPlugin,
     file_path: &PathBuf,
+    active_lang: Option<&str>,
     permission_error: &mut Option<String>,
     first_line_row: &mut Option<u16>,
 ) -> Result<(), mynox::Error> {
@@ -243,48 +277,118 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                     *first_line_row = Some(area.y);
                 }
 
-                // If write permissions failed, split vertically to render the red error bar below the editor
-                let (editor_area, error_area) = if let Some(err_msg) = permission_error.as_deref() {
+                // Split vertically when either search bar or write permission error bar is active
+                let (editor_area, bottom_bar) = if search_state.is_active {
                     let chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
                             Constraint::Min(1),    // Editor body
-                            Constraint::Length(1), // Red warning bar
+                            Constraint::Length(1), // Search bar
                         ])
                         .split(area);
-
-                    (chunks[0], Some((chunks[1], err_msg)))
+                    (chunks[0], Some((chunks[1], BottomBarMode::Search)))
+                } else if let Some(err_msg) = permission_error.as_deref() {
+                    let chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Min(1),    // Editor body
+                            Constraint::Length(1), // Error bar
+                        ])
+                        .split(area);
+                    (chunks[0], Some((chunks[1], BottomBarMode::Error(err_msg))))
                 } else {
                     (area, None)
                 };
 
-                // Base view with optional wrapping (wrap_enabled = false activates Texera's ultra-fast O(height) unwrapped path)
+                // Base view with optional wrapping
                 let mut view = EditorView::new()
                     .with_style(Style::default())
                     .with_wrap(wrap_enabled)
                     .with_highlighter(highlight.clone());
 
-                if show_gutter {
+                let gutter_width = if show_gutter {
                     let gutter = LineNumberPlugin::new()
                         .with_style(Style::default().fg(Color::DarkGray))
                         .with_marker(unsaved_lines.clone());
+                    let width = gutter.width(state.doc().len_lines()).min(editor_area.width);
                     view = view.with_gutter(gutter);
-                }
+                    width
+                } else {
+                    0
+                };
 
                 f.render_stateful_widget(view.bind(state), editor_area, view_state);
 
-                // Render status bar underneath the editor explaining permission denial
-                if let Some((err_rect, msg)) = error_area {
-                    let error_bar = Paragraph::new(Line::from(vec![
-                        Span::styled(
-                            format!(" ✘ {}", msg),
-                            Style::default()
-                                .fg(Color::Red)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                    ]));
+                // Render subtle search highlights onto buffer
+                search_state.render_subtle_highlights(f.buffer_mut(), editor_area, state, view_state, gutter_width);
 
-                    f.render_widget(error_bar, err_rect);
+                // Render bottom bar (search or permission error)
+                if let Some((bar_rect, mode)) = bottom_bar {
+                    match mode {
+                        BottomBarMode::Search => {
+                            let (prompt_title, prompt_style) = if search_state.focus == SearchFocus::SearchInput {
+                                (" search: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                            } else {
+                                (" search [editor]: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD))
+                            };
+
+                            let count_text = if search_state.query.is_empty() {
+                                String::new()
+                            } else if search_state.matches.is_empty() {
+                                " (no match)".to_string()
+                            } else {
+                                format!(
+                                    " ({}/{})",
+                                    search_state.current_match_idx.map(|i| i + 1).unwrap_or(0),
+                                    search_state.matches.len()
+                                )
+                            };
+
+                            let hints = if search_state.focus == SearchFocus::SearchInput {
+                                "  (shift-e: editor | shift-n: next | shift-p: prev | esc: close)"
+                            } else {
+                                "  (shift-s: search | shift-n: next | shift-p: prev | esc: close)"
+                            };
+
+                            let spans = if search_state.focus == SearchFocus::SearchInput {
+                                let (before, after) = search_state.query_split_at_cursor();
+                                vec![
+                                    Span::styled(prompt_title, prompt_style),
+                                    Span::styled(before, Style::default().fg(Color::White)),
+                                    Span::styled(
+                                        "_",
+                                        Style::default()
+                                            .fg(Color::Magenta)
+                                            .add_modifier(Modifier::BOLD),
+                                    ),
+                                    Span::styled(after, Style::default().fg(Color::White)),
+                                    Span::styled(count_text, Style::default().fg(Color::Yellow)),
+                                    Span::styled(hints, Style::default().fg(Color::DarkGray)),
+                                ]
+                            } else {
+                                vec![
+                                    Span::styled(prompt_title, prompt_style),
+                                    Span::styled(&search_state.query, Style::default().fg(Color::White)),
+                                    Span::styled(count_text, Style::default().fg(Color::Yellow)),
+                                    Span::styled(hints, Style::default().fg(Color::DarkGray)),
+                                ]
+                            };
+
+                            let bar = Paragraph::new(Line::from(spans));
+                            f.render_widget(bar, bar_rect);
+                        }
+                        BottomBarMode::Error(msg) => {
+                            let error_bar = Paragraph::new(Line::from(vec![
+                                Span::styled(
+                                    format!(" ✘ {}", msg),
+                                    Style::default()
+                                        .fg(Color::Red)
+                                        .add_modifier(Modifier::BOLD),
+                                ),
+                            ]));
+                            f.render_widget(error_bar, bar_rect);
+                        }
+                    }
                 }
             })
             .map_err(|e| {
@@ -295,8 +399,7 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                 )
             })?;
 
-        // Adaptive polling: poll at 8ms while the syntax parse is catching up with visible lines,
-        // and 50ms once syntax is ready, minimizing CPU usage and stutter
+        // Adaptive polling
         let poll_timeout = if view_state.syntax_ready(state) {
             std::time::Duration::from_millis(50)
         } else {
@@ -317,88 +420,270 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                     format!("Failed to read keyboard event: {}", e)
                 )
             })? {
-                // Exit with Ctrl+C
-                if key_event.code == KeyCode::Char('c')
-                    && key_event.modifiers.contains(KeyModifiers::CONTROL)
-                {
-                    break;
+                // Ignore key release and repeat events to avoid duplicate triggers
+                if key_event.kind != crossterm::event::KeyEventKind::Press {
+                    continue;
                 }
 
-                // Handle Esc: collapse multiple selections down to one, or exit if already single
-                if key_event.code == KeyCode::Esc {
-                    match collapse_selections_or_exit(state) {
-                        true => continue,
-                        false => break,
+                // If search mode is active and focused on search input
+                if search_state.is_active && search_state.focus == SearchFocus::SearchInput {
+                    // Check focus switch to editor (shift-e)
+                    if (key_event.modifiers.contains(KeyModifiers::SHIFT)
+                        && (key_event.code == KeyCode::Char('e') || key_event.code == KeyCode::Char('E')))
+                        || key_event.code == KeyCode::Char('E')
+                    {
+                        search_state.focus = SearchFocus::Editor;
+                        continue;
                     }
-                }
 
-                // Toggle Line Gutter with F2
-                if key_event.code == KeyCode::F(2) {
-                    show_gutter = !show_gutter;
-                    continue;
-                }
+                    // Check navigation within search mode (shift-n)
+                    if (key_event.modifiers.contains(KeyModifiers::SHIFT)
+                        && (key_event.code == KeyCode::Char('n') || key_event.code == KeyCode::Char('N')))
+                        || key_event.code == KeyCode::Char('N')
+                    {
+                        search_state.next_match(state);
+                        continue;
+                    }
 
-                // Toggle Soft Line Wrapping with F3
-                if key_event.code == KeyCode::F(3) {
-                    wrap_enabled = !wrap_enabled;
-                    continue;
-                }
+                    // Check navigation within search mode (shift-p)
+                    if (key_event.modifiers.contains(KeyModifiers::SHIFT)
+                        && (key_event.code == KeyCode::Char('p') || key_event.code == KeyCode::Char('P')))
+                        || key_event.code == KeyCode::Char('P')
+                    {
+                        search_state.prev_match(state);
+                        continue;
+                    }
 
-                // Save with Ctrl+S using write permission detector to avoid panicking
-                if is_save_pressed(&key_event) {
-                    let current_text = state.doc().to_string();
-                    match save_file(&current_text, file_path) {
-                        Ok(()) => {
-                            unsaved_lines.mark_as_saved(state);
-                            *permission_error = None;
-                            let _ = Cache::remove(file_path);
+                    if key_event.code == KeyCode::Esc {
+                        search_state.close();
+                        continue;
+                    }
+
+                    if key_event.code == KeyCode::Enter {
+                        search_state.next_match(state);
+                        continue;
+                    }
+
+                    if key_event.code == KeyCode::Char('c') && key_event.modifiers == KeyModifiers::CONTROL {
+                        break;
+                    }
+
+                    if key_event.code == KeyCode::Backspace {
+                        if search_state.query_cursor > 0 {
+                            search_state.query_cursor -= 1;
+                            search_state.query.remove(search_state.query_cursor);
+                            search_state.recompute_matches(state);
+                            search_state.apply_current_match(state);
                         }
-                        Err(err) => {
-                            // If saving failed due to permission denial, persist unsaved content to temp cache
-                            if err.is_category("fs::permission_denied") {
-                                let _ = Cache::save(file_path, &current_text);
-                            }
+                        continue;
+                    }
 
-                            // Display clean explanation without crashing or panicking
-                            let description = if err.is_category("fs::permission_denied") {
-                                format!(
-                                    "Permission denied: You do not have write permissions to modify `{}`",
-                                    file_path.display()
-                                )
-                            } else {
-                                format!(
-                                    "Permission denied: Unable to modify `{}` ({})",
-                                    file_path.display(),
-                                    err.message()
-                                )
-                            };
-                            *permission_error = Some(description);
+                    if key_event.code == KeyCode::Delete {
+                        if search_state.query_cursor < search_state.query.len() {
+                            search_state.query.remove(search_state.query_cursor);
+                            search_state.recompute_matches(state);
+                            search_state.apply_current_match(state);
+                        }
+                        continue;
+                    }
+
+                    if key_event.code == KeyCode::Left {
+                        search_state.query_cursor = search_state.query_cursor.saturating_sub(1);
+                        continue;
+                    }
+
+                    if key_event.code == KeyCode::Right {
+                        search_state.query_cursor = (search_state.query_cursor + 1).min(search_state.query.len());
+                        continue;
+                    }
+
+                    if let KeyCode::Char(c) = key_event.code {
+                        if !key_event.modifiers.contains(KeyModifiers::CONTROL)
+                            && !key_event.modifiers.contains(KeyModifiers::ALT)
+                        {
+                            search_state.query.insert(search_state.query_cursor, c);
+                            search_state.query_cursor += 1;
+                            search_state.recompute_matches(state);
+                            search_state.apply_current_match(state);
+                            continue;
                         }
                     }
+
                     continue;
                 }
 
-                // Dispatch editor actions through Texera
+                // Key dispatch when focus is in editor
                 if let Some(action) = keymap.action_for_key(&key_event) {
-                    let is_edit = matches!(
-                        action,
-                        EditorAction::InsertChar
-                            | EditorAction::InsertNewline
-                            | EditorAction::InsertTab
-                            | EditorAction::DeleteBackward
-                            | EditorAction::DeleteForward
-                            | EditorAction::Undo
-                            | EditorAction::Redo
-                    );
-
-                    match apply_action(state, action, Some(&key_event)) {
-                        Ok(changed) => {
-                            if changed && is_edit {
-                                unsaved_lines.check_dirty_lines(state);
+                    match action {
+                        IeAction::Exit => break,
+                        IeAction::Escape => {
+                            if search_state.is_active {
+                                search_state.close();
+                                continue;
+                            }
+                            match collapse_selections_or_exit(state) {
+                                true => continue,
+                                false => break,
                             }
                         }
-                        Err(_e) => {
-                            // Non-fatal editor action error, continue loop
+                        IeAction::FocusSearch => {
+                            if search_state.is_active {
+                                search_state.focus = SearchFocus::SearchInput;
+                                continue;
+                            }
+                        }
+                        IeAction::FocusEditor => {
+                            // Already focused on editor
+                            continue;
+                        }
+                        IeAction::NextMatch => {
+                            if search_state.is_active {
+                                search_state.next_match(state);
+                                continue;
+                            }
+                        }
+                        IeAction::PrevMatch => {
+                            if search_state.is_active {
+                                search_state.prev_match(state);
+                                continue;
+                            }
+                        }
+                        IeAction::Search => {
+                            search_state.open(state);
+                            continue;
+                        }
+                        IeAction::ToggleGutter => {
+                            show_gutter = !show_gutter;
+                            continue;
+                        }
+                        IeAction::ToggleWrap => {
+                            wrap_enabled = !wrap_enabled;
+                            continue;
+                        }
+                        IeAction::SaveFile => {
+                            let current_text = state.doc().to_string();
+                            match save_file(&current_text, file_path) {
+                                Ok(()) => {
+                                    unsaved_lines.mark_as_saved(state);
+                                    *permission_error = None;
+                                    let _ = Cache::remove(file_path);
+                                }
+                                Err(err) => {
+                                    if err.is_category("fs::permission_denied") {
+                                        let _ = Cache::save(file_path, &current_text);
+                                    }
+                                    let description = if err.is_category("fs::permission_denied") {
+                                        format!(
+                                            "Permission denied: You do not have write permissions to modify `{}`",
+                                            file_path.display()
+                                        )
+                                    } else {
+                                        format!(
+                                            "Permission denied: Unable to modify `{}` ({})",
+                                            file_path.display(),
+                                            err.message()
+                                        )
+                                    };
+                                    *permission_error = Some(description);
+                                }
+                            }
+                            continue;
+                        }
+                        IeAction::CloneLineDown => {
+                            if clone_lines(state, true)? {
+                                unsaved_lines.check_dirty_lines(state);
+                                if search_state.is_active {
+                                    search_state.recompute_matches(state);
+                                }
+                            }
+                            continue;
+                        }
+                        IeAction::CloneLineUp => {
+                            if clone_lines(state, false)? {
+                                unsaved_lines.check_dirty_lines(state);
+                                if search_state.is_active {
+                                    search_state.recompute_matches(state);
+                                }
+                            }
+                            continue;
+                        }
+                        IeAction::MoveSelectionDown => {
+                            if move_selection_lines(state, true)? {
+                                unsaved_lines.check_dirty_lines(state);
+                                if search_state.is_active {
+                                    search_state.recompute_matches(state);
+                                }
+                            }
+                            continue;
+                        }
+                        IeAction::MoveSelectionUp => {
+                            if move_selection_lines(state, false)? {
+                                unsaved_lines.check_dirty_lines(state);
+                                if search_state.is_active {
+                                    search_state.recompute_matches(state);
+                                }
+                            }
+                            continue;
+                        }
+                        IeAction::DeleteLine => {
+                            if delete_lines(state)? {
+                                unsaved_lines.check_dirty_lines(state);
+                                if search_state.is_active {
+                                    search_state.recompute_matches(state);
+                                }
+                            }
+                            continue;
+                        }
+                        IeAction::AddLineBelow => {
+                            if add_line(state, true)? {
+                                unsaved_lines.check_dirty_lines(state);
+                                if search_state.is_active {
+                                    search_state.recompute_matches(state);
+                                }
+                            }
+                            continue;
+                        }
+                        IeAction::AddLineAbove => {
+                            if add_line(state, false)? {
+                                unsaved_lines.check_dirty_lines(state);
+                                if search_state.is_active {
+                                    search_state.recompute_matches(state);
+                                }
+                            }
+                            continue;
+                        }
+                        IeAction::ToggleComments => {
+                            if toggle_comments(state, active_lang)? {
+                                unsaved_lines.check_dirty_lines(state);
+                                if search_state.is_active {
+                                    search_state.recompute_matches(state);
+                                }
+                            }
+                            continue;
+                        }
+                        IeAction::Texera(action) => {
+                            let is_edit = matches!(
+                                action,
+                                EditorAction::InsertChar
+                                    | EditorAction::InsertNewline
+                                    | EditorAction::InsertTab
+                                    | EditorAction::DeleteBackward
+                                    | EditorAction::DeleteForward
+                                    | EditorAction::Undo
+                                    | EditorAction::Redo
+                            );
+
+                            match apply_action(state, action, Some(&key_event)) {
+                                Ok(changed) => {
+                                    if changed && is_edit {
+                                        unsaved_lines.check_dirty_lines(state);
+                                        if search_state.is_active {
+                                            search_state.recompute_matches(state);
+                                        }
+                                    }
+                                }
+                                Err(_e) => {}
+                            }
                         }
                     }
                 }
@@ -407,10 +692,6 @@ fn run_event_loop<B: ratatui::backend::Backend>(
     }
 
     Ok(())
-}
-
-fn is_save_pressed(key: &KeyEvent) -> bool {
-    key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s')
 }
 
 /// Collapses multi-cursor selections to a single selection, or returns false if already single.
@@ -437,7 +718,6 @@ mod tests {
             AllowMultipleSelections(true).into(),
         ]);
 
-        // Add multiple cursors / selections
         let sel = Selection::from(vec![
             SelectionRange::cursor(0),
             SelectionRange::cursor(6),
@@ -447,12 +727,10 @@ mod tests {
         state = update_res.state().clone();
         assert_eq!(state.selection().count(), 3);
 
-        // When multiple selections exist, collapse returns true and leaves exactly 1 selection
         let handled = collapse_selections_or_exit(&mut state);
         assert!(handled);
         assert_eq!(state.selection().count(), 1);
 
-        // When only 1 selection exists, collapse returns false (signaling to exit)
         let handled_second = collapse_selections_or_exit(&mut state);
         assert!(!handled_second);
         assert_eq!(state.selection().count(), 1);

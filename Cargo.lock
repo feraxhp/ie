@@ -596,6 +596,8 @@ dependencies = [
  "directories",
  "mynox",
  "ratatui",
+ "serde",
+ "serde_json",
  "texera",
  "texera-core",
 ]
