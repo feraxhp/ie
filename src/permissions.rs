@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use mynox::Error;
 
 /// Detector for file and directory write permissions.
@@ -112,6 +112,62 @@ pub fn check_write_permission(path: &Path) -> Result<(), Error> {
     }
 }
 
+/// Derives the backup file path by appending `.bak` to the given path.
+pub fn backup_path(path: &Path) -> PathBuf {
+    let mut bak = path.as_os_str().to_os_string();
+    bak.push(".bak");
+    PathBuf::from(bak)
+}
+
+/// Creates a backup copy (<path>.bak) of the file at `path` before modification.
+/// If the file does not exist on disk, no backup is created and returns `Ok(None)`.
+/// Returns `Ok(Some(backup_path))` if a backup was successfully created.
+pub fn create_backup(path: &Path) -> Result<Option<PathBuf>, Error> {
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let bak_path = backup_path(path);
+
+    // Validate write permissions before attempting to write/overwrite the backup
+    check_write_permission(&bak_path)?;
+
+    // Ensure parent directory exists before writing backup
+    if let Some(parent) = bak_path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            fs::create_dir_all(parent).map_err(|e| {
+                mynox::error!(
+                    "fs::create_dir",
+                    "Failed to create parent directory",
+                    format!("Could not create directory `{}`: {}", parent.display(), e)
+                )
+            })?;
+        }
+    }
+
+    fs::copy(path, &bak_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            mynox::error!(
+                "fs::permission_denied",
+                "Permission denied",
+                format!("No **write permissions** to create backup `{}`", bak_path.display())
+                =>
+                "Verify file permissions or run with elevated privileges"
+            )
+        } else {
+            mynox::error!(
+                "fs::backup_error",
+                "Failed to create backup file",
+                format!("Could not create backup `{}`: {}", bak_path.display(), e)
+                =>
+                "Check available disk space and **write permissions**"
+            )
+        }
+    })?;
+
+    Ok(Some(bak_path))
+}
+
 /// Saves the given content to disk after validating write permissions.
 pub fn save_file(content: &str, path: &Path) -> Result<(), Error> {
     check_write_permission(path)?;
@@ -155,6 +211,75 @@ pub fn save_file(content: &str, path: &Path) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_backup_path() {
+        assert_eq!(
+            backup_path(Path::new("config.toml")),
+            PathBuf::from("config.toml.bak")
+        );
+        assert_eq!(
+            backup_path(Path::new("/etc/fstab")),
+            PathBuf::from("/etc/fstab.bak")
+        );
+        assert_eq!(
+            backup_path(Path::new("file")),
+            PathBuf::from("file.bak")
+        );
+    }
+
+    #[test]
+    fn test_create_backup_existing_file() {
+        let test_file = std::env::temp_dir().join(format!("ie_backup_test_{}.txt", std::process::id()));
+        let bak_file = backup_path(&test_file);
+        let _ = fs::write(&test_file, "original content");
+
+        let res = create_backup(&test_file);
+        assert!(res.is_ok());
+        let res_path = res.unwrap();
+        assert_eq!(res_path, Some(bak_file.clone()));
+        assert!(bak_file.exists());
+        assert_eq!(fs::read_to_string(&bak_file).unwrap(), "original content");
+
+        // Clean up
+        let _ = fs::remove_file(&test_file);
+        let _ = fs::remove_file(&bak_file);
+    }
+
+    #[test]
+    fn test_create_backup_nonexistent_file() {
+        let test_file = std::env::temp_dir().join(format!("ie_nonexistent_backup_{}.txt", std::process::id()));
+        let bak_file = backup_path(&test_file);
+
+        let res = create_backup(&test_file);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), None);
+        assert!(!bak_file.exists());
+    }
+
+    #[test]
+    fn test_create_backup_readonly_file() {
+        let test_file = std::env::temp_dir().join(format!("ie_ro_bak_src_{}.txt", std::process::id()));
+        let bak_file = backup_path(&test_file);
+        let _ = fs::write(&test_file, "original content");
+        let _ = fs::write(&bak_file, "old backup content");
+
+        // Mark backup file as read-only
+        let mut perms = fs::metadata(&bak_file).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&bak_file, perms).unwrap();
+
+        let res = create_backup(&test_file);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().is_category("fs::permission_denied"));
+
+        // Clean up
+        let mut perms = fs::metadata(&bak_file).unwrap().permissions();
+        perms.set_readonly(false);
+        let _ = fs::set_permissions(&bak_file, perms);
+        let _ = fs::remove_file(&test_file);
+        let _ = fs::remove_file(&bak_file);
+    }
 
     #[test]
     fn test_writable_file() {

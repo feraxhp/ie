@@ -15,6 +15,7 @@ pub struct Options {
     pub format: Option<String>,
     pub line: Option<usize>,
     pub column: Option<usize>,
+    pub backup: bool,
 }
 
 pub fn build_command() -> Command {
@@ -29,6 +30,7 @@ pub fn build_command() -> Command {
                 .default_value("8")
                 .value_parser(value_parser!(u16)),
             arg!( -f --format [format] "Overrides the detected language for syntax highlighting" ),
+            arg!( -b --backup "Create a backup file (<file>.bak) before the first save" ),
         ])
 }
 
@@ -131,6 +133,7 @@ pub fn parse_options_from(args: &[OsString]) -> Result<Options, clap::Error> {
     let lines = matches.get_one::<u16>("lines").unwrap();
     let raw_file = matches.get_one::<String>("file").unwrap();
     let format = matches.get_one::<String>("format").cloned();
+    let backup = matches.get_flag("backup");
 
     let (file, file_line, file_col) = parse_file_and_location(raw_file);
     let (line, column) = match (plus_line, plus_col) {
@@ -149,6 +152,7 @@ pub fn parse_options_from(args: &[OsString]) -> Result<Options, clap::Error> {
         format,
         line,
         column,
+        backup,
     })
 }
 
@@ -208,6 +212,7 @@ mod tests {
         assert_eq!(opts.line, Some(45));
         assert_eq!(opts.column, None);
         assert_eq!(opts.mode, TUImode::INLINE(8));
+        assert!(!opts.backup);
     }
 
     #[test]
@@ -220,6 +225,7 @@ mod tests {
         assert_eq!(opts.file, "main.rs");
         assert_eq!(opts.line, Some(82));
         assert_eq!(opts.column, Some(15));
+        assert!(!opts.backup);
     }
 
     #[test]
@@ -233,6 +239,7 @@ mod tests {
         assert_eq!(opts.file, "config.toml");
         assert_eq!(opts.line, Some(45));
         assert_eq!(opts.column, None);
+        assert!(!opts.backup);
     }
 
     #[test]
@@ -246,6 +253,7 @@ mod tests {
         assert_eq!(opts.file, "config.toml");
         assert_eq!(opts.line, Some(45));
         assert_eq!(opts.column, Some(20));
+        assert!(!opts.backup);
     }
 
     #[test]
@@ -261,6 +269,7 @@ mod tests {
         assert_eq!(opts.file, "large_file.txt");
         assert_eq!(opts.line, Some(100));
         assert_eq!(opts.mode, TUImode::INLINE(16));
+        assert!(!opts.backup);
     }
 
     #[test]
@@ -275,5 +284,25 @@ mod tests {
         assert_eq!(opts.line, Some(50));
         assert_eq!(opts.column, Some(3));
         assert_eq!(opts.mode, TUImode::FULL);
+        assert!(!opts.backup);
+    }
+
+    #[test]
+    fn test_parse_options_backup_flags() {
+        let args_long = vec![
+            OsString::from("ie"),
+            OsString::from("--backup"),
+            OsString::from("config.toml"),
+        ];
+        let opts_long = parse_options_from(&args_long).unwrap();
+        assert!(opts_long.backup);
+
+        let args_short = vec![
+            OsString::from("ie"),
+            OsString::from("-b"),
+            OsString::from("config.toml"),
+        ];
+        let opts_short = parse_options_from(&args_short).unwrap();
+        assert!(opts_short.backup);
     }
 }

@@ -38,7 +38,7 @@ use crate::editor_actions::{
 };
 use crate::highlight::{detect_language, init_highlighter};
 use crate::keymap::{IeAction, IeKeymap};
-use crate::permissions::{check_write_permission, save_file};
+use crate::permissions::{check_write_permission, create_backup, save_file};
 use crate::prompt::prompt_restore;
 use crate::search::{SearchFocus, SearchState};
 use crate::system::{Directories, File};
@@ -255,6 +255,7 @@ fn run() -> Result<(), mynox::Error> {
         &highlight,
         &file_path,
         active_lang.as_deref(),
+        options.backup,
         &mut permission_error,
         &mut first_line_row,
     );
@@ -300,11 +301,13 @@ fn run_event_loop<B: ratatui::backend::Backend>(
     highlight: &HighlightPlugin,
     file_path: &PathBuf,
     active_lang: Option<&str>,
+    backup: bool,
     permission_error: &mut Option<String>,
     first_line_row: &mut Option<u16>,
 ) -> Result<(), mynox::Error> {
     let mut show_gutter = true;
     let mut wrap_enabled = false;
+    let mut backup_done = false;
 
     loop {
         terminal
@@ -467,8 +470,8 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                 // If search mode is active and focused on search input
                 if search_state.is_active && search_state.focus == SearchFocus::SearchInput {
                     // Check focus switch to editor (shift-e)
-                    if (key_event.modifiers.contains(KeyModifiers::SHIFT)
-                        && (key_event.code == KeyCode::Char('e') || key_event.code == KeyCode::Char('E')))
+                    if key_event.modifiers.contains(KeyModifiers::SHIFT)
+                        && (key_event.code == KeyCode::Char('e') || key_event.code == KeyCode::Char('E'))
                         || key_event.code == KeyCode::Char('E')
                     {
                         search_state.focus = SearchFocus::Editor;
@@ -476,8 +479,8 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                     }
 
                     // Check navigation within search mode (shift-n)
-                    if (key_event.modifiers.contains(KeyModifiers::SHIFT)
-                        && (key_event.code == KeyCode::Char('n') || key_event.code == KeyCode::Char('N')))
+                    if key_event.modifiers.contains(KeyModifiers::SHIFT)
+                        && (key_event.code == KeyCode::Char('n') || key_event.code == KeyCode::Char('N'))
                         || key_event.code == KeyCode::Char('N')
                     {
                         search_state.next_match(state);
@@ -485,8 +488,8 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                     }
 
                     // Check navigation within search mode (shift-p)
-                    if (key_event.modifiers.contains(KeyModifiers::SHIFT)
-                        && (key_event.code == KeyCode::Char('p') || key_event.code == KeyCode::Char('P')))
+                    if key_event.modifiers.contains(KeyModifiers::SHIFT)
+                        && (key_event.code == KeyCode::Char('p') || key_event.code == KeyCode::Char('P'))
                         || key_event.code == KeyCode::Char('P')
                     {
                         search_state.prev_match(state);
@@ -601,7 +604,22 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                         }
                         IeAction::SaveFile => {
                             let current_text = state.doc().to_string();
-                            match save_file(&current_text, file_path) {
+
+                            let backup_step = if backup && !backup_done {
+                                create_backup(file_path)
+                            } else {
+                                Ok(None)
+                            };
+
+                            let save_result = match backup_step {
+                                Ok(_) => {
+                                    backup_done = true;
+                                    save_file(&current_text, file_path)
+                                }
+                                Err(err) => Err(err),
+                            };
+
+                            match save_result {
                                 Ok(()) => {
                                     unsaved_lines.mark_as_saved(state);
                                     *permission_error = None;

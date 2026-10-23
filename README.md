@@ -43,6 +43,10 @@ ie -l 15 +45 config.toml
 
 # Override syntax highlighting language
 ie -f toml config.custom
+
+# Create backup before first save (e.g. /etc/fstab -> /etc/fstab.bak)
+ie -b /etc/fstab
+ie --backup config.toml
 ```
 
 ## Default Keybindings
