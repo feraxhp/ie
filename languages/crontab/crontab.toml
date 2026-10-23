@@ -1,0 +1,49 @@
+[meta]
+name = "crontab"
+extensions = ["cron", "crontab"]
+
+[states.root]
+rules = [
+    # Comments
+    { match = '#.*', token = "comment" },
+    # Cron special predefined scheduling definitions
+    { match = '@(?:reboot|yearly|annually|monthly|weekly|daily|midnight|hourly)\b', token = "keyword" },
+    # Environment variable settings in crontab (e.g. SHELL=/bin/bash, MAILTO=root, PATH=...)
+    { match = '[a-zA-Z_]\w*', lookahead = '\s*=', token = "variable" },
+    { match = '=', token = "operator" },
+    # Strings
+    { match = '"', token = "string", push = "string_double" },
+    { match = "'", token = "string", push = "string_single" },
+    # Month names (JAN-DEC) and Day names (SUN-SAT)
+    { match = '\b(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b', token = "type" },
+    { match = '\b(?:SUN|MON|TUE|WED|THU|FRI|SAT)\b', token = "type" },
+    # Step intervals and ranges
+    { match = '/\d+', token = "operator" },
+    { match = '\b\d+-\d+\b', token = "number" },
+    # Numbers
+    { match = '\b\d+\b', token = "number" },
+    # Wildcards and list separators
+    { match = '[*,]', token = "operator" },
+    # Redirections and shell operators commonly found in crontab commands
+    { match = '>>|2>&1|1>&2|>&|>&2|[><|&;]', token = "operator" },
+    # Paths in commands
+    { match = '/[a-zA-Z0-9_\-\./*]+', token = "string" },
+    # General command identifiers / arguments
+    { match = '[a-zA-Z_]\w*', token = "variable" },
+]
+
+[states.string_double]
+pop_on_newline = true
+default_token = "string"
+rules = [
+    { match = '\\.', token = "string.escape" },
+    { match = '"', token = "string", pop = true },
+]
+
+[states.string_single]
+pop_on_newline = true
+default_token = "string"
+rules = [
+    { match = '\\.', token = "string.escape" },
+    { match = "'", token = "string", pop = true },
+]

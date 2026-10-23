@@ -1,0 +1,9 @@
+{
+  "keyword": "magenta",
+  "variable": "white",
+  "operator": "cyan",
+  "number": "yellow",
+  "type": "yellow",
+  "string": "green",
+  "comment": "darkgray"
+}

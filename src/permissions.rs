@@ -6,36 +6,31 @@ use mynox::Error;
 /// Prevents panics or unexpected crashes when attempting to save a file in a location without write permissions.
 pub fn check_write_permission(path: &Path) -> Result<(), Error> {
     if path.exists() {
-        // 1. Check if the file has a read-only metadata flag
-        let metadata = fs::metadata(path).map_err(|e| {
-            mynox::error!(
-                "fs::permission_denied",
-                "Cannot access file metadata",
-                format!("Failed to read metadata for `{}`: {}", path.display(), e)
-            )
-        })?;
-
-        if metadata.permissions().readonly() {
-            return Err(mynox::error!(
-                "fs::permission_denied",
-                "Permission denied",
-                format!("File `{}` is **read-only**", path.display())
-                =>
-                format!("Run `chmod +w {}` to grant write permissions", path.display())
-            ));
-        }
-
-        // 2. Check if the current process has actual write access to the file
+        // Check if the current process has actual write access to the file.
+        // We probe opening with write access rather than solely rejecting on metadata.permissions().readonly(),
+        // because root/CAP_DAC_OVERRIDE can write to 0440 files (such as /etc/sudoers during visudo),
+        // whereas metadata.readonly() is true for 0440 and would falsely block root writes.
         match fs::OpenOptions::new().write(true).open(path) {
             Ok(_) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                Err(mynox::error!(
-                    "fs::permission_denied",
-                    "Permission denied",
-                    format!("No **write permissions** for file `{}`", path.display())
-                    =>
-                    "Check your user permissions or run with elevated privileges"
-                ))
+                let metadata = fs::metadata(path).ok();
+                if metadata.map(|m| m.permissions().readonly()).unwrap_or(false) {
+                    Err(mynox::error!(
+                        "fs::permission_denied",
+                        "Permission denied",
+                        format!("File `{}` is **read-only**", path.display())
+                        =>
+                        format!("Run `chmod +w {}` to grant write permissions", path.display())
+                    ))
+                } else {
+                    Err(mynox::error!(
+                        "fs::permission_denied",
+                        "Permission denied",
+                        format!("No **write permissions** for file `{}`", path.display())
+                        =>
+                        "Check your user permissions or run with elevated privileges"
+                    ))
+                }
             }
             Err(e) => {
                 Err(mynox::error!(
@@ -169,7 +164,20 @@ pub fn create_backup(path: &Path) -> Result<Option<PathBuf>, Error> {
 }
 
 /// Saves the given content to disk after validating write permissions.
+/// If the file exists and its content is identical to what is being saved,
+/// writing to disk is skipped to preserve the file's modification timestamp (mtime).
+/// Tools like `crontab -e` and `visudo` inspect mtime to notify if no changes were made.
+/// Existing inodes and POSIX permissions are preserved when writing.
 pub fn save_file(content: &str, path: &Path) -> Result<(), Error> {
+    // If the file already exists and its content is identical, do not rewrite it to preserve mtime
+    if path.exists() {
+        if let Ok(existing_bytes) = fs::read(path) {
+            if existing_bytes == content.as_bytes() {
+                return Ok(());
+            }
+        }
+    }
+
     check_write_permission(path)?;
 
     // Ensure parent directory exists before writing
@@ -322,6 +330,74 @@ mod tests {
         let mut perms = fs::metadata(&test_file).unwrap().permissions();
         perms.set_readonly(false);
         let _ = fs::set_permissions(&test_file, perms);
+        let _ = fs::remove_file(&test_file);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_save_file_preserves_inode_and_permissions() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        let test_file = std::env::temp_dir().join(format!("ie_inode_test_{}.txt", std::process::id()));
+        let _ = fs::write(&test_file, "initial content");
+
+        // Set strict permissions (0600) like crontab and visudo
+        let mut perms = fs::metadata(&test_file).unwrap().permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(&test_file, perms).unwrap();
+
+        let initial_meta = fs::metadata(&test_file).unwrap();
+        let initial_inode = initial_meta.ino();
+        let initial_mode = initial_meta.permissions().mode() & 0o777;
+
+        // Save updated content
+        let save_res = save_file("updated content", &test_file);
+        assert!(save_res.is_ok());
+
+        let updated_meta = fs::metadata(&test_file).unwrap();
+        assert_eq!(updated_meta.ino(), initial_inode, "Inode must be preserved across saves");
+        assert_eq!(
+            updated_meta.permissions().mode() & 0o777,
+            initial_mode,
+            "Permissions mode must be preserved across saves"
+        );
+        assert_eq!(fs::read_to_string(&test_file).unwrap(), "updated content");
+
+        let _ = fs::remove_file(&test_file);
+    }
+
+    #[test]
+    fn test_save_file_preserves_mtime_when_content_unchanged() {
+        let test_file = std::env::temp_dir().join(format!("ie_mtime_test_{}.txt", std::process::id()));
+        let _ = fs::write(&test_file, "same content");
+
+        let initial_mtime = fs::metadata(&test_file).unwrap().modified().unwrap();
+
+        // Brief sleep to ensure filesystem timestamp resolution would change if modified
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Save identical content: mtime must NOT be touched
+        let save_res = save_file("same content", &test_file);
+        assert!(save_res.is_ok());
+
+        let after_same_mtime = fs::metadata(&test_file).unwrap().modified().unwrap();
+        assert_eq!(
+            after_same_mtime, initial_mtime,
+            "mtime must be preserved when content is unchanged"
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Save different content: mtime MUST be updated
+        let save_res = save_file("different content", &test_file);
+        assert!(save_res.is_ok());
+
+        let after_diff_mtime = fs::metadata(&test_file).unwrap().modified().unwrap();
+        assert!(
+            after_diff_mtime > initial_mtime,
+            "mtime must be updated when content is modified"
+        );
+
         let _ = fs::remove_file(&test_file);
     }
 }

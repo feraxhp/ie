@@ -6,7 +6,7 @@ use texera::{LanguageRegistry, LexState};
 
 /// Detects the language or syntax format from the given file name or extension.
 pub fn detect_language(path: &Path) -> Option<&'static str> {
-    // 1. Exact file name detection
+    // 1. Exact file name and prefix detection
     if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
         let lower = file_name.to_ascii_lowercase();
         match lower.as_str() {
@@ -29,6 +29,8 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
             "hosts" | "resolv.conf" => return Some("hosts"),
             "fstab" | "crypttab" | "mtab" => return Some("fstab"),
             "sudoers" => return Some("sudoers"),
+            "crontab" => return Some("crontab"),
+            "override.conf" => return Some("systemd"),
             "ssh_config" | "sshd_config" | "known_hosts" | "authorized_keys" => {
                 return Some("sshconfig");
             }
@@ -68,10 +70,17 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
             "nginx" => return Some("nginx"),
             "caddy" => return Some("caddy"),
             "apt" | "apt_sources" | "sources" | "repo" => return Some("apt_sources"),
+            "cron" => return Some("crontab"),
             _ => {}
         }
         if lower.starts_with("git-rebase") {
             return Some("gitrebase");
+        }
+        if lower.starts_with("commit_editmsg")
+            || lower.starts_with("merge_msg")
+            || lower.starts_with("tag_editmsg")
+        {
+            return Some("gitcommit");
         }
         if lower.starts_with(".git") {
             return Some("gitconfig");
@@ -79,11 +88,55 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
         if lower.starts_with(".env.") || lower.ends_with(".env") {
             return Some("env");
         }
+        if lower.starts_with("sudoers") {
+            return Some("sudoers");
+        }
+        if lower.starts_with("crontab") {
+            return Some("crontab");
+        }
         if lower == "config" {
             if let Some(parent) = path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()) {
                 if parent.eq_ignore_ascii_case(".ssh") || parent.eq_ignore_ascii_case("ssh") {
                     return Some("sshconfig");
                 }
+            }
+        }
+    }
+
+    // Contextual parent directory detection (e.g. /etc/sudoers.d/admin, /etc/cron.d/anacron, systemd unit drop-ins)
+    if let Some(parent) = path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()) {
+        let parent_lower = parent.to_ascii_lowercase();
+        if parent_lower == "sudoers.d" {
+            return Some("sudoers");
+        }
+        if parent_lower == "cron.d"
+            || parent_lower == "cron.daily"
+            || parent_lower == "cron.hourly"
+            || parent_lower == "cron.weekly"
+            || parent_lower == "cron.monthly"
+        {
+            return Some("crontab");
+        }
+        if parent_lower.ends_with(".service.d")
+            || parent_lower.ends_with(".socket.d")
+            || parent_lower.ends_with(".target.d")
+            || parent_lower.ends_with(".timer.d")
+            || parent_lower.ends_with(".mount.d")
+            || parent_lower.ends_with(".automount.d")
+            || parent_lower.ends_with(".path.d")
+            || parent_lower.ends_with(".slice.d")
+            || parent_lower.ends_with(".scope.d")
+            || parent_lower.ends_with(".conf.d")
+        {
+            return Some("systemd");
+        }
+    }
+
+    // Systemd drop-in snippets or system configuration files (e.g. /etc/systemd/system.conf, /etc/systemd/system/.../override.conf)
+    if path.components().any(|c| c.as_os_str().to_str().map(|s| s.eq_ignore_ascii_case("systemd")).unwrap_or(false)) {
+        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            if ext.eq_ignore_ascii_case("conf") {
+                return Some("systemd");
             }
         }
     }
@@ -118,6 +171,8 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
             "dockerfile" | "docker" => Some("dockerfile"),
             "env" | "dotenv" => Some("env"),
             "sshconfig" | "ssh_config" | "ssh" => Some("sshconfig"),
+            "sudoers" => Some("sudoers"),
+            "cron" | "crontab" => Some("crontab"),
             // Linux system files
             "desktop" => Some("desktop"),
             "service" | "socket" | "target" | "timer" | "mount" | "automount" | "path"
@@ -160,6 +215,7 @@ pub fn get_builtin_toml(lang: &str) -> Option<&'static str> {
         "c_sharp" => Some(include_str!("../languages/c_sharp/c_sharp.toml")),
         "caddy" => Some(include_str!("../languages/caddy/caddy.toml")),
         "cpp" => Some(include_str!("../languages/cpp/cpp.toml")),
+        "crontab" | "cron" => Some(include_str!("../languages/crontab/crontab.toml")),
         "css" => Some(include_str!("../languages/css/css.toml")),
         "desktop" => Some(include_str!("../languages/desktop/desktop.toml")),
         "diff" => Some(include_str!("../languages/diff/diff.toml")),
@@ -204,6 +260,7 @@ pub fn get_builtin_theme(lang: &str) -> Option<ThemeMap> {
         "c_sharp" => Some(include_str!("../languages/c_sharp/theme.json")),
         "caddy" => Some(include_str!("../languages/caddy/theme.json")),
         "cpp" => Some(include_str!("../languages/cpp/theme.json")),
+        "crontab" | "cron" => Some(include_str!("../languages/crontab/theme.json")),
         "css" => Some(include_str!("../languages/css/theme.json")),
         "desktop" => Some(include_str!("../languages/desktop/theme.json")),
         "diff" => Some(include_str!("../languages/diff/theme.json")),
@@ -338,63 +395,69 @@ fn init_global_theme(theme: &mut ThemeMap) {
 /// - `global_theme.json` or `theme.json` in the root overrides global fallback token colors.
 /// - Subdirectories `config_dir/<lang>/` with `*.toml` and/or `theme.json` override grammar and token colors.
 /// - Flat files `config_dir/<lang>.toml` and `config_dir/<lang>.json` override grammar and token colors.
-pub fn apply_config_overrides(highlight: &mut HighlightPlugin, config_dir: &Path) {
+fn apply_config_overrides(highlight: &mut HighlightPlugin, config_dir: &Path) {
     if !config_dir.exists() || !config_dir.is_dir() {
         return;
     }
 
-    // 1. Root global theme: global_theme.json or theme.json
-    for global_name in &["global_theme.json", "theme.json"] {
-        let global_path = config_dir.join(global_name);
-        if global_path.is_file() {
-            if let Ok(theme) = ThemeMap::load_from_file(&global_path) {
-                for (token, color) in theme.token_colors {
-                    highlight.global_theme.set_color(token, color);
-                }
-                break;
+    // 1. Root theme overrides for global fallback colors
+    let root_global_theme = config_dir.join("global_theme.json");
+    let root_theme = config_dir.join("theme.json");
+    if root_global_theme.is_file() {
+        if let Ok(theme) = ThemeMap::load_from_file(&root_global_theme) {
+            for (token, color) in theme.token_colors {
+                highlight.global_theme.set_color(token, color);
+            }
+        }
+    } else if root_theme.is_file() {
+        if let Ok(theme) = ThemeMap::load_from_file(&root_theme) {
+            for (token, color) in theme.token_colors {
+                highlight.global_theme.set_color(token, color);
             }
         }
     }
 
-    // 2. Scan entries in config_dir
-    let Ok(entries) = fs::read_dir(config_dir) else {
-        return;
-    };
+    // 2. Scan entries in config_dir for language directories and flat override files
+    if let Ok(entries) = fs::read_dir(config_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                // Subdirectory mode: config_dir/<lang>/...
+                if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
+                    let lang_name = dir_name;
+                    let toml_candidates = [
+                        path.join(format!("{}.toml", lang_name)),
+                        path.join("syntax.toml"),
+                    ];
+                    let toml_content = toml_candidates
+                        .iter()
+                        .find(|p| p.is_file())
+                        .and_then(|p| fs::read_to_string(p).ok());
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            // Directory-based language: config_dir/{lang}/
-            let Some(lang_name) = path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
+                    let theme_path = path.join("theme.json");
+                    let user_theme = if theme_path.is_file() {
+                        ThemeMap::load_from_file(&theme_path).ok()
+                    } else {
+                        None
+                    };
 
-            let mut toml_content: Option<String> = None;
-            let mut user_theme: Option<ThemeMap> = None;
-
-            if let Ok(sub_entries) = fs::read_dir(&path) {
-                for sub_entry in sub_entries.flatten() {
-                    let sub_path = sub_entry.path();
-                    if sub_path.is_file() {
-                        if let Some(ext) = sub_path.extension().and_then(|e| e.to_str()) {
-                            if ext == "toml" && toml_content.is_none() {
-                                if let Ok(content) = fs::read_to_string(&sub_path) {
-                                    toml_content = Some(content);
-                                }
-                            } else if ext == "json" && user_theme.is_none() {
-                                if let Ok(theme) = ThemeMap::load_from_file(&sub_path) {
-                                    user_theme = Some(theme);
-                                }
-                            }
-                        }
+                    if toml_content.is_some() || user_theme.is_some() {
+                        override_or_insert_language(
+                            highlight,
+                            lang_name,
+                            toml_content,
+                            user_theme,
+                        );
                     }
                 }
-            }
+            } else if path.is_file() {
+                // Flat file mode: config_dir/<lang>.toml and config_dir/<lang>.json
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or_default()
+                    .to_ascii_lowercase();
 
-            override_or_insert_language(highlight, lang_name, toml_content, user_theme);
-        } else if path.is_file() {
-            // Flat-file based: config_dir/{lang}.toml and config_dir/{lang}.json
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 if ext == "toml" {
                     if let Some(lang_name) = path.file_stem().and_then(|s| s.to_str()) {
                         if let Ok(content) = fs::read_to_string(&path) {
@@ -548,6 +611,35 @@ mod tests {
         assert_eq!(detect_language(Path::new("Caddyfile")), Some("caddy"));
         assert_eq!(detect_language(Path::new("/etc/apt/sources.list")), Some("apt_sources"));
         assert_eq!(detect_language(Path::new("fedora.repo")), Some("apt_sources"));
+
+        // Crontab detection
+        assert_eq!(detect_language(Path::new("crontab")), Some("crontab"));
+        assert_eq!(detect_language(Path::new("/tmp/crontab.123456")), Some("crontab"));
+        assert_eq!(detect_language(Path::new("/tmp/crontab.uY6aBc/crontab")), Some("crontab"));
+        assert_eq!(detect_language(Path::new("/etc/crontab")), Some("crontab"));
+        assert_eq!(detect_language(Path::new("/etc/cron.d/anacron")), Some("crontab"));
+        assert_eq!(detect_language(Path::new("backup.cron")), Some("crontab"));
+        assert_eq!(detect_language(Path::new("samples/crontab")), Some("crontab"));
+
+        // Sudoers detection
+        assert_eq!(detect_language(Path::new("/etc/sudoers.tmp")), Some("sudoers"));
+        assert_eq!(detect_language(Path::new("samples/sudoers.tmp")), Some("sudoers"));
+        assert_eq!(detect_language(Path::new("/etc/sudoers.d/01-wheel")), Some("sudoers"));
+        assert_eq!(detect_language(Path::new("/etc/sudoers.d/admin")), Some("sudoers"));
+
+        // Systemd drop-in and config files
+        assert_eq!(detect_language(Path::new("override.conf")), Some("systemd"));
+        assert_eq!(detect_language(Path::new("samples/override.conf")), Some("systemd"));
+        assert_eq!(
+            detect_language(Path::new("/etc/systemd/system/docker.service.d/override.conf")),
+            Some("systemd")
+        );
+        assert_eq!(
+            detect_language(Path::new("/etc/systemd/system/nginx.service.d/50-limits.conf")),
+            Some("systemd")
+        );
+        assert_eq!(detect_language(Path::new("/etc/systemd/system.conf")), Some("systemd"));
+        assert_eq!(detect_language(Path::new("/etc/systemd/user.conf")), Some("systemd"));
     }
 
     #[test]
@@ -556,11 +648,16 @@ mod tests {
         assert_eq!(detect_language(Path::new(".gitattributes")), Some("gitignore"));
         assert_eq!(detect_language(Path::new(".gitmodules")), Some("gitignore"));
         assert_eq!(detect_language(Path::new("COMMIT_EDITMSG")), Some("gitcommit"));
+        assert_eq!(detect_language(Path::new("samples/COMMIT_EDITMSG")), Some("gitcommit"));
+        assert_eq!(detect_language(Path::new("MERGE_MSG")), Some("gitcommit"));
+        assert_eq!(detect_language(Path::new("TAG_EDITMSG")), Some("gitcommit"));
+        assert_eq!(detect_language(Path::new(".git/COMMIT_EDITMSG")), Some("gitcommit"));
         assert_eq!(detect_language(Path::new(".gitconfig")), Some("gitconfig"));
         assert_eq!(detect_language(Path::new("gitconfig")), Some("gitconfig"));
         assert_eq!(detect_language(Path::new("git-rebase-todo")), Some("gitrebase"));
         assert_eq!(detect_language(Path::new(".git/rebase-merge/git-rebase-todo")), Some("gitrebase"));
         assert_eq!(detect_language(Path::new("todo.rebase")), Some("gitrebase"));
+        assert_eq!(detect_language(Path::new("samples/git-rebase-todo")), Some("gitrebase"));
     }
 
     #[test]
@@ -582,6 +679,8 @@ mod tests {
         assert_eq!(resolve_codeblock_language("docker"), Some("dockerfile"));
         assert_eq!(resolve_codeblock_language("make"), Some("makefile"));
         assert_eq!(resolve_codeblock_language("rebase"), Some("gitrebase"));
+        assert_eq!(resolve_codeblock_language("crontab"), Some("crontab"));
+        assert_eq!(resolve_codeblock_language("cron"), Some("crontab"));
         assert_eq!(resolve_codeblock_language("unknown_lang_123"), None);
     }
 
@@ -600,6 +699,10 @@ mod tests {
         assert!(py_spec.grammar.contains("name = \"python\""));
         assert!(py_spec.theme.is_some());
 
+        let cron_spec = load_codeblock_spec("crontab", &dummy_dir).expect("crontab spec must load");
+        assert!(cron_spec.grammar.contains("name = \"crontab\""));
+        assert!(cron_spec.theme.is_some());
+
         assert!(load_codeblock_spec("unknown_tag_xyz", &dummy_dir).is_none());
     }
 
@@ -613,6 +716,7 @@ mod tests {
         assert!(load_codeblock_toml("c++", &dummy_dir).is_some());
         assert!(load_codeblock_toml("c#", &dummy_dir).is_some());
         assert!(load_codeblock_toml("bash", &dummy_dir).is_some());
+        assert!(load_codeblock_toml("crontab", &dummy_dir).is_some());
         assert!(load_codeblock_toml("unknown_tag_xyz", &dummy_dir).is_none());
     }
 
@@ -667,6 +771,7 @@ mod tests {
         assert!(highlighter.languages.contains_key("apt_sources"));
         assert!(highlighter.languages.contains_key("lua"));
         assert!(highlighter.languages.contains_key("sql"));
+        assert!(highlighter.languages.contains_key("crontab"));
     }
 
     #[test]
@@ -865,6 +970,34 @@ mod tests {
     }
 
     #[test]
+    fn test_crontab_tokens() {
+        let cron_src = include_str!("../languages/crontab/crontab.toml");
+        let reg = LanguageRegistry::new();
+        let registered = reg.register("crontab", cron_src).expect("crontab must compile");
+
+        // 1. Comment
+        let comment_line = reg.tokenize_line(registered.lang_id, "# Edit this file to introduce tasks");
+        assert!(comment_line.iter().all(|t| t.2.as_ref() == "comment"));
+
+        // 2. Env assignment
+        let env_line = reg.tokenize_line(registered.lang_id, "SHELL=/bin/bash");
+        assert!(env_line.iter().any(|t| t.2.as_ref() == "variable"));
+        assert!(env_line.iter().any(|t| t.2.as_ref() == "operator"));
+        assert!(env_line.iter().any(|t| t.2.as_ref() == "string"));
+
+        // 3. Periodic job line
+        let job_line = reg.tokenize_line(registered.lang_id, "0 5 * * 1 /usr/local/bin/backup-system.sh > /dev/null 2>&1");
+        assert!(job_line.iter().any(|t| t.2.as_ref() == "number"));
+        assert!(job_line.iter().any(|t| t.2.as_ref() == "operator"));
+        assert!(job_line.iter().any(|t| t.2.as_ref() == "string"));
+
+        // 4. Special macro
+        let macro_line = reg.tokenize_line(registered.lang_id, "@reboot /usr/local/bin/on-boot-tasks.sh");
+        assert!(macro_line.iter().any(|t| t.2.as_ref() == "keyword"));
+        assert!(macro_line.iter().any(|t| t.2.as_ref() == "string"));
+    }
+
+    #[test]
     fn test_rust_highlighting_tokens() {
         let rust_src = include_str!("../languages/rust/rust.toml");
         let reg = LanguageRegistry::new();
@@ -956,7 +1089,7 @@ mod tests {
         let _ = fs::create_dir_all(&zig_dir);
         let _ = fs::write(
             zig_dir.join("zig.toml"),
-            "[meta]\nname = \"zig\"\nextensions = [\"zig\"]\n\n[states.root]\nrules = [\n    { match = '\\b(?:fn|pub)\\b', token = \"keyword\" },\n]\n",
+            "[meta]\nname = \"zig\"\nextensions = [\"zig\"]\n\n[states.root]\nrules = [\n    { match = '\\\\b(?:fn|pub)\\\\b', token = \"keyword\" },\n]\n",
         );
 
         let highlighter = init_highlighter(&test_dir);
@@ -1019,5 +1152,35 @@ mod tests {
         assert!(tokens2.iter().any(|t| t.2.as_ref() == "keyword.import")); // export
         assert!(tokens2.iter().any(|t| t.2.as_ref() == "keyword.function")); // function
     }
-}
 
+    #[test]
+    fn test_sample_files_tokenization() {
+        let dummy_dir = PathBuf::from("/tmp/nonexistent_ie_test_dir_123");
+        let highlighter = init_highlighter(&dummy_dir);
+
+        let sample_files = [
+            ("samples/crontab", "crontab"),
+            ("samples/sudoers.tmp", "sudoers"),
+            ("samples/override.conf", "systemd"),
+            ("samples/COMMIT_EDITMSG", "gitcommit"),
+            ("samples/sudoers", "sudoers"),
+            ("samples/git-rebase-todo", "gitrebase"),
+        ];
+
+        for (file_path, expected_lang) in sample_files {
+            let path = Path::new(file_path);
+            let detected = detect_language(path);
+            assert_eq!(detected, Some(expected_lang), "Failed detecting language for {}", file_path);
+
+            if let Ok(content) = fs::read_to_string(path) {
+                let lang_id = highlighter.registry().lang_id(expected_lang)
+                    .unwrap_or_else(|| panic!("Language {} not in registry", expected_lang));
+
+                let mut state = LexState::default();
+                for line in content.lines() {
+                    let _tokens = highlighter.registry().tokenize_line_stateful(lang_id, line, &mut state);
+                }
+            }
+        }
+    }
+}
