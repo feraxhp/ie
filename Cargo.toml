@@ -15,7 +15,7 @@ crossterm = "0.29.0"
 directories = "6.0.0"
 mynox = "0.1.3"
 ratatui = "0.30.0"
-texera = "0.1.0"
+texera = { version = "0.2.0", path = "../texera" }
 texera-core = "0.99.2"
 
 [[bin]]

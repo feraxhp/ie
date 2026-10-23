@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::Path;
-use texera::{include_languaje_dir, HighlightPlugin, LanguageToml, ThemeMap};
+use texera::{include_languaje_dir, HighlightPlugin, LanguageSpec, LanguageToml, ThemeMap};
 #[cfg(test)]
 use texera::{LanguageRegistry, LexState};
 
@@ -196,10 +196,55 @@ pub fn get_builtin_toml(lang: &str) -> Option<&'static str> {
     }
 }
 
-/// Loads a language's TOML specification on demand for codeblock syntax highlighting.
-/// Reuses `detect_language` to resolve aliases or extensions to canonical language grammars.
-/// Checks user configuration directory first, then falls back to built-in grammars.
-pub fn load_codeblock_toml(tag: &str, config_dir: &Path) -> Option<String> {
+/// Returns the built-in theme for the given canonical language name, if available.
+pub fn get_builtin_theme(lang: &str) -> Option<ThemeMap> {
+    let json_str = match lang {
+        "apt_sources" => Some(include_str!("../languages/apt_sources/theme.json")),
+        "c" => Some(include_str!("../languages/c/theme.json")),
+        "c_sharp" => Some(include_str!("../languages/c_sharp/theme.json")),
+        "caddy" => Some(include_str!("../languages/caddy/theme.json")),
+        "cpp" => Some(include_str!("../languages/cpp/theme.json")),
+        "css" => Some(include_str!("../languages/css/theme.json")),
+        "desktop" => Some(include_str!("../languages/desktop/theme.json")),
+        "diff" => Some(include_str!("../languages/diff/theme.json")),
+        "dockerfile" => Some(include_str!("../languages/dockerfile/theme.json")),
+        "env" => Some(include_str!("../languages/env/theme.json")),
+        "fstab" => Some(include_str!("../languages/fstab/theme.json")),
+        "gitcommit" => Some(include_str!("../languages/gitcommit/theme.json")),
+        "gitconfig" => Some(include_str!("../languages/gitconfig/theme.json")),
+        "gitignore" => Some(include_str!("../languages/gitignore/theme.json")),
+        "gitrebase" => Some(include_str!("../languages/gitrebase/theme.json")),
+        "go" => Some(include_str!("../languages/go/theme.json")),
+        "hosts" => Some(include_str!("../languages/hosts/theme.json")),
+        "html" => Some(include_str!("../languages/html/theme.json")),
+        "ini" => Some(include_str!("../languages/ini/theme.json")),
+        "java" => Some(include_str!("../languages/java/theme.json")),
+        "javascript" => Some(include_str!("../languages/javascript/theme.json")),
+        "json" => Some(include_str!("../languages/json/theme.json")),
+        "kotlin" => Some(include_str!("../languages/kotlin/theme.json")),
+        "lua" => Some(include_str!("../languages/lua/theme.json")),
+        "makefile" => Some(include_str!("../languages/makefile/theme.json")),
+        "markdown" => Some(include_str!("../languages/markdown/theme.json")),
+        "nginx" => Some(include_str!("../languages/nginx/theme.json")),
+        "python" => Some(include_str!("../languages/python/theme.json")),
+        "rust" => Some(include_str!("../languages/rust/theme.json")),
+        "shell" => Some(include_str!("../languages/shell/theme.json")),
+        "sql" => Some(include_str!("../languages/sql/theme.json")),
+        "sshconfig" => Some(include_str!("../languages/sshconfig/theme.json")),
+        "sudoers" => Some(include_str!("../languages/sudoers/theme.json")),
+        "systemd" => Some(include_str!("../languages/systemd/theme.json")),
+        "toml" => Some(include_str!("../languages/toml/theme.json")),
+        "typescript" => Some(include_str!("../languages/typescript/theme.json")),
+        "yaml" => Some(include_str!("../languages/yaml/theme.json")),
+        _ => None,
+    };
+    json_str.and_then(|s| ThemeMap::from_json_str(s).ok())
+}
+
+/// Loads a language's specification (grammar and theme) on demand for codeblock syntax highlighting.
+/// Reuses `detect_language` to resolve aliases or extensions to canonical language specifications.
+/// Checks user configuration directory first, then falls back to built-in grammars and themes.
+pub fn load_codeblock_spec(tag: &str, config_dir: &Path) -> Option<LanguageSpec> {
     let clean = tag.trim();
     if clean.is_empty() {
         return None;
@@ -210,7 +255,7 @@ pub fn load_codeblock_toml(tag: &str, config_dir: &Path) -> Option<String> {
 
     // 1. Check user config overrides first
     if config_dir.exists() && config_dir.is_dir() {
-        let candidates = [
+        let grammar_candidates = [
             config_dir.join(lang).join(format!("{}.toml", lang)),
             config_dir.join(lang).join("syntax.toml"),
             config_dir.join(format!("{}.toml", lang)),
@@ -218,19 +263,45 @@ pub fn load_codeblock_toml(tag: &str, config_dir: &Path) -> Option<String> {
             config_dir.join(format!("{}.toml", clean)),
         ];
 
-        for candidate in &candidates {
+        for candidate in &grammar_candidates {
             if candidate.is_file() {
-                if let Ok(content) = fs::read_to_string(candidate) {
-                    return Some(content);
+                if let Ok(grammar) = fs::read_to_string(candidate) {
+                    let theme_candidates = [
+                        candidate.with_extension("json"),
+                        candidate.parent().map(|p| p.join("theme.json")).unwrap_or_default(),
+                        config_dir.join(lang).join("theme.json"),
+                        config_dir.join(format!("{}.json", lang)),
+                    ];
+                    let mut user_theme = None;
+                    for tc in &theme_candidates {
+                        if tc.is_file() {
+                            if let Ok(theme) = ThemeMap::load_from_file(tc) {
+                                user_theme = Some(theme);
+                                break;
+                            }
+                        }
+                    }
+                    let theme = user_theme.or_else(|| get_builtin_theme(lang));
+                    return Some(LanguageSpec::new(grammar, theme));
                 }
             }
         }
     }
 
     // 2. Fall back to built-in language definitions
-    get_builtin_toml(lang)
-        .or_else(|| get_builtin_toml(clean))
-        .map(|s| s.to_string())
+    let grammar = get_builtin_toml(lang)
+        .or_else(|| get_builtin_toml(clean))?
+        .to_string();
+
+    let theme = get_builtin_theme(lang).or_else(|| get_builtin_theme(clean));
+
+    Some(LanguageSpec::new(grammar, theme))
+}
+
+/// Convenience function that loads only the TOML grammar definition.
+#[allow(dead_code)]
+pub fn load_codeblock_toml(tag: &str, config_dir: &Path) -> Option<String> {
+    load_codeblock_spec(tag, config_dir).map(|spec| spec.grammar)
 }
 
 /// Populates global fallback theme with standard tokens so embedded codeblocks have colors.
@@ -396,7 +467,7 @@ fn override_or_insert_language(
 
 /// Initializes the syntax highlighter with built-in languages loaded via `include_languaje_dir!`
 /// and extends them at runtime with dynamic user queries and themes from the configuration directory.
-/// Installs an on-demand language loader callback for Markdown codeblock syntax injection.
+/// Installs an on-demand language specification loader callback (grammar + theme) for Markdown codeblocks.
 pub fn init_highlighter(config_dir: &Path) -> HighlightPlugin {
     // 1. Load built-in project languages using the Texera proc-macro
     let mut highlight = include_languaje_dir!("languages");
@@ -407,10 +478,10 @@ pub fn init_highlighter(config_dir: &Path) -> HighlightPlugin {
     // 2. Load dynamic specs with strict precedence: config_dir overrides built-ins
     apply_config_overrides(&mut highlight, config_dir);
 
-    // 3. Register on-demand loader for codeblocks, resolving languages via detect_language
+    // 3. Register on-demand spec loader for codeblocks, resolving grammar and contextual theme
     let config_dir_buf = config_dir.to_path_buf();
-    highlight = highlight.with_loader(move |name: &str| {
-        load_codeblock_toml(name, &config_dir_buf)
+    highlight = highlight.with_spec_loader(move |name: &str| {
+        load_codeblock_spec(name, &config_dir_buf)
     });
 
     highlight
@@ -515,6 +586,24 @@ mod tests {
     }
 
     #[test]
+    fn test_load_codeblock_spec() {
+        let dummy_dir = PathBuf::from("/tmp/nonexistent_ie_test_dir_123");
+        let rust_spec = load_codeblock_spec("rust", &dummy_dir).expect("rust spec must load");
+        assert!(rust_spec.grammar.contains("name = \"rust\""));
+        assert!(rust_spec.theme.is_some());
+
+        let rs_spec = load_codeblock_spec("rs", &dummy_dir).expect("rs spec must load");
+        assert!(rs_spec.grammar.contains("name = \"rust\""));
+        assert!(rs_spec.theme.is_some());
+
+        let py_spec = load_codeblock_spec("py", &dummy_dir).expect("py spec must load");
+        assert!(py_spec.grammar.contains("name = \"python\""));
+        assert!(py_spec.theme.is_some());
+
+        assert!(load_codeblock_spec("unknown_tag_xyz", &dummy_dir).is_none());
+    }
+
+    #[test]
     fn test_load_codeblock_toml() {
         let dummy_dir = PathBuf::from("/tmp/nonexistent_ie_test_dir_123");
         assert!(load_codeblock_toml("rust", &dummy_dir).is_some());
@@ -595,25 +684,32 @@ mod tests {
         let t0 = highlighter
             .registry()
             .tokenize_line_stateful(md_lang_id, "# Code Samples", &mut state);
-        assert!(t0.iter().any(|t| t.1.as_ref() == "markup.heading"));
+        assert!(t0.iter().any(|t| t.2.as_ref() == "markup.heading"));
 
         // 2. Line 1: Opening code fence with alias "rs"
         let t1 = highlighter
             .registry()
             .tokenize_line_stateful(md_lang_id, "```rs", &mut state);
-        assert!(t1.iter().any(|t| t.1.as_ref() == "punctuation.delimiter"));
+        assert!(t1.iter().any(|t| t.2.as_ref() == "punctuation.delimiter"));
 
         // 3. Line 2: Rust code inside the block
         let t2 = highlighter
             .registry()
             .tokenize_line_stateful(md_lang_id, "fn main() {", &mut state);
-        assert!(t2.iter().any(|t| t.1.as_ref().starts_with("keyword")));
+        assert!(t2.iter().any(|t| t.2.as_ref().starts_with("keyword")));
+        // Verify that the token is scoped to the embedded language, not markdown
+        let rs_lang_id = highlighter.registry().lang_id("rs").expect("rs must be resolved");
+        assert_eq!(t2[0].1, rs_lang_id);
+
+        // Verify that contextual theme for "rs" is available
+        let rs_theme = highlighter.theme_of_lang_id(rs_lang_id).expect("rs theme must exist");
+        assert!(rs_theme.token_colors.contains_key("keyword") || rs_theme.token_colors.contains_key("keyword.function"));
 
         // 4. Line 3: Closing fence
         let t3 = highlighter
             .registry()
             .tokenize_line_stateful(md_lang_id, "```", &mut state);
-        assert!(t3.iter().any(|t| t.1.as_ref() == "punctuation.delimiter"));
+        assert!(t3.iter().any(|t| t.2.as_ref() == "punctuation.delimiter"));
 
         // 5. Line 4: Code block with alias "py"
         let _ = highlighter
@@ -622,7 +718,7 @@ mod tests {
         let t_py = highlighter
             .registry()
             .tokenize_line_stateful(md_lang_id, "def hello():", &mut state);
-        assert!(t_py.iter().any(|t| t.1.as_ref().starts_with("keyword")));
+        assert!(t_py.iter().any(|t| t.2.as_ref().starts_with("keyword")));
         let _ = highlighter
             .registry()
             .tokenize_line_stateful(md_lang_id, "```", &mut state);
@@ -636,7 +732,7 @@ mod tests {
             .tokenize_line_stateful(md_lang_id, "int main() {", &mut state);
         assert!(t_cpp
             .iter()
-            .any(|t| t.1.as_ref().starts_with("type") || t.1.as_ref().starts_with("keyword")));
+            .any(|t| t.2.as_ref().starts_with("type") || t.2.as_ref().starts_with("keyword")));
         let _ = highlighter
             .registry()
             .tokenize_line_stateful(md_lang_id, "```", &mut state);
@@ -648,12 +744,12 @@ mod tests {
         let reg = LanguageRegistry::new();
         let registered = reg.register("toml", toml_src).expect("toml must compile");
         let tokens = reg.tokenize_line(registered.lang_id, "[package]");
-        assert!(tokens.iter().any(|t| t.1.as_ref() == "type" || t.1.as_ref() == "keyword"));
+        assert!(tokens.iter().any(|t| t.2.as_ref() == "type" || t.2.as_ref() == "keyword"));
 
         let kv_tokens = reg.tokenize_line(registered.lang_id, "name = \"ie\"");
-        assert!(kv_tokens.iter().any(|t| t.1.as_ref() == "keyword"));
-        assert!(kv_tokens.iter().any(|t| t.1.as_ref() == "operator"));
-        assert!(kv_tokens.iter().any(|t| t.1.as_ref() == "string"));
+        assert!(kv_tokens.iter().any(|t| t.2.as_ref() == "keyword"));
+        assert!(kv_tokens.iter().any(|t| t.2.as_ref() == "operator"));
+        assert!(kv_tokens.iter().any(|t| t.2.as_ref() == "string"));
     }
 
     #[test]
@@ -664,24 +760,24 @@ mod tests {
 
         // 1. Branch line
         let branch_tokens = reg.tokenize_line(registered.lang_id, "# On branch main");
-        assert!(branch_tokens.iter().any(|t| t.1.as_ref() == "comment"));
-        assert!(branch_tokens.iter().any(|t| t.1.as_ref() == "type.branch"));
+        assert!(branch_tokens.iter().any(|t| t.2.as_ref() == "comment"));
+        assert!(branch_tokens.iter().any(|t| t.2.as_ref() == "type.branch"));
 
         // 2. Date line
         let date_tokens = reg.tokenize_line(registered.lang_id, "# Date:   Wed Oct 21 21:06:59 2026 -0500");
-        assert!(date_tokens.iter().any(|t| t.1.as_ref() == "comment"));
-        assert!(date_tokens.iter().any(|t| t.1.as_ref() == "type.date"));
+        assert!(date_tokens.iter().any(|t| t.2.as_ref() == "comment"));
+        assert!(date_tokens.iter().any(|t| t.2.as_ref() == "type.date"));
 
         // 3. Changes header & file changes
         let changes_header_tokens = reg.tokenize_line(registered.lang_id, "# Changes to be committed:");
-        assert!(changes_header_tokens.iter().any(|t| t.1.as_ref() == "type.change"));
+        assert!(changes_header_tokens.iter().any(|t| t.2.as_ref() == "type.change"));
 
         let file_tokens = reg.tokenize_line(registered.lang_id, "#\tmodified:   src/highlight.rs");
-        assert!(file_tokens.iter().any(|t| t.1.as_ref() == "type.change"));
+        assert!(file_tokens.iter().any(|t| t.2.as_ref() == "type.change"));
 
         // 4. Standard comment instructions (no branch/date/change)
         let standard_comment = reg.tokenize_line(registered.lang_id, "# Please enter the commit message for your changes.");
-        assert!(standard_comment.iter().all(|t| t.1.as_ref() == "comment"));
+        assert!(standard_comment.iter().all(|t| t.2.as_ref() == "comment"));
     }
 
     #[test]
@@ -692,41 +788,41 @@ mod tests {
 
         // 1. pick commands with hash and comment (both hex-letter and pure-digit hashes)
         let pick1 = reg.tokenize_line(registered.lang_id, "pick 7467bad # feat: hard reset to include submodules");
-        assert!(pick1.iter().any(|t| t.1.as_ref() == "keyword"));
-        assert!(pick1.iter().any(|t| t.1.as_ref() == "constant"));
-        assert!(pick1.iter().any(|t| t.1.as_ref() == "comment"));
+        assert!(pick1.iter().any(|t| t.2.as_ref() == "keyword"));
+        assert!(pick1.iter().any(|t| t.2.as_ref() == "constant"));
+        assert!(pick1.iter().any(|t| t.2.as_ref() == "comment"));
 
         let pick2 = reg.tokenize_line(registered.lang_id, "pick 3605781 # feat: fase 6 completada");
-        assert!(pick2.iter().any(|t| t.1.as_ref() == "keyword"));
-        assert!(pick2.iter().any(|t| t.1.as_ref() == "constant"));
-        assert!(pick2.iter().any(|t| t.1.as_ref() == "comment"));
+        assert!(pick2.iter().any(|t| t.2.as_ref() == "keyword"));
+        assert!(pick2.iter().any(|t| t.2.as_ref() == "constant"));
+        assert!(pick2.iter().any(|t| t.2.as_ref() == "comment"));
 
         // 2. drop, squash, exec commands
         let drop_line = reg.tokenize_line(registered.lang_id, "drop bb61410 # feat: add support for first line");
-        assert!(drop_line.iter().any(|t| t.1.as_ref() == "keyword.return")); // red
-        assert!(drop_line.iter().any(|t| t.1.as_ref() == "constant"));
-        assert!(drop_line.iter().any(|t| t.1.as_ref() == "comment"));
+        assert!(drop_line.iter().any(|t| t.2.as_ref() == "keyword.return")); // red
+        assert!(drop_line.iter().any(|t| t.2.as_ref() == "constant"));
+        assert!(drop_line.iter().any(|t| t.2.as_ref() == "comment"));
         // Ensure "for" in comment is NOT parsed as a keyword!
-        assert!(!drop_line.iter().any(|t| t.1.as_ref() == "keyword.repeat"));
+        assert!(!drop_line.iter().any(|t| t.2.as_ref() == "keyword.repeat"));
 
         let squash_line = reg.tokenize_line(registered.lang_id, "squash 1c56788 feat: plan");
-        assert!(squash_line.iter().any(|t| t.1.as_ref() == "keyword.modifier"));
-        assert!(squash_line.iter().any(|t| t.1.as_ref() == "constant"));
+        assert!(squash_line.iter().any(|t| t.2.as_ref() == "keyword.modifier"));
+        assert!(squash_line.iter().any(|t| t.2.as_ref() == "constant"));
 
         // 3. Documentation comment lines
         let doc_pick = reg.tokenize_line(registered.lang_id, "# p, pick <commit> = use commit");
-        assert!(doc_pick.iter().any(|t| t.1.as_ref() == "keyword"));
-        assert!(doc_pick.iter().any(|t| t.1.as_ref() == "type"));
+        assert!(doc_pick.iter().any(|t| t.2.as_ref() == "keyword"));
+        assert!(doc_pick.iter().any(|t| t.2.as_ref() == "type"));
 
         let doc_drop = reg.tokenize_line(registered.lang_id, "# d, drop <commit> = remove commit");
-        assert!(doc_drop.iter().any(|t| t.1.as_ref() == "keyword.return"));
-        assert!(doc_drop.iter().any(|t| t.1.as_ref() == "type"));
+        assert!(doc_drop.iter().any(|t| t.2.as_ref() == "keyword.return"));
+        assert!(doc_drop.iter().any(|t| t.2.as_ref() == "type"));
 
         let doc_warn = reg.tokenize_line(registered.lang_id, "# If you remove a line here THAT COMMIT WILL BE LOST.");
-        assert!(doc_warn.iter().any(|t| t.1.as_ref() == "keyword.conditional"));
+        assert!(doc_warn.iter().any(|t| t.2.as_ref() == "keyword.conditional"));
 
         let doc_rebase = reg.tokenize_line(registered.lang_id, "# Rebase a2b433d..0d48cb1 onto a2b433d (26 commands)");
-        assert!(doc_rebase.iter().any(|t| t.1.as_ref() == "constant"));
+        assert!(doc_rebase.iter().any(|t| t.2.as_ref() == "constant"));
     }
 
     #[test]
@@ -736,9 +832,9 @@ mod tests {
         let registered = reg.register("hosts", hosts_src).expect("hosts must compile");
 
         let tokens = reg.tokenize_line(registered.lang_id, "nameserver 1.1.1.1:53");
-        assert!(tokens.iter().any(|t| t.1.as_ref() == "keyword"));
-        assert!(tokens.iter().any(|t| t.1.as_ref() == "type"));
-        assert!(tokens.iter().any(|t| t.1.as_ref() == "operator"));
+        assert!(tokens.iter().any(|t| t.2.as_ref() == "keyword"));
+        assert!(tokens.iter().any(|t| t.2.as_ref() == "type"));
+        assert!(tokens.iter().any(|t| t.2.as_ref() == "operator"));
     }
 
     #[test]
@@ -748,24 +844,24 @@ mod tests {
         let registered = reg.register("sshconfig", ssh_src).expect("sshconfig must compile");
 
         let host_tokens = reg.tokenize_line(registered.lang_id, "Host github.com");
-        assert!(host_tokens.iter().any(|t| t.1.as_ref() == "keyword.declaration"));
-        assert!(host_tokens.iter().any(|t| t.1.as_ref() == "type"));
+        assert!(host_tokens.iter().any(|t| t.2.as_ref() == "keyword.declaration"));
+        assert!(host_tokens.iter().any(|t| t.2.as_ref() == "type"));
 
         let hostname_tokens = reg.tokenize_line(registered.lang_id, "    HostName github.com");
-        assert!(hostname_tokens.iter().any(|t| t.1.as_ref() == "property"));
-        assert!(hostname_tokens.iter().any(|t| t.1.as_ref() == "type"));
+        assert!(hostname_tokens.iter().any(|t| t.2.as_ref() == "property"));
+        assert!(hostname_tokens.iter().any(|t| t.2.as_ref() == "type"));
 
         let user_tokens = reg.tokenize_line(registered.lang_id, "    User git");
-        assert!(user_tokens.iter().any(|t| t.1.as_ref() == "keyword.modifier"));
-        assert!(user_tokens.iter().any(|t| t.1.as_ref() == "variable.parameter"));
+        assert!(user_tokens.iter().any(|t| t.2.as_ref() == "keyword.modifier"));
+        assert!(user_tokens.iter().any(|t| t.2.as_ref() == "variable.parameter"));
 
         let id_tokens = reg.tokenize_line(registered.lang_id, "    IdentityFile ~/.ssh/id_ed25519");
-        assert!(id_tokens.iter().any(|t| t.1.as_ref() == "keyword.modifier"));
-        assert!(id_tokens.iter().any(|t| t.1.as_ref() == "string"));
+        assert!(id_tokens.iter().any(|t| t.2.as_ref() == "keyword.modifier"));
+        assert!(id_tokens.iter().any(|t| t.2.as_ref() == "string"));
 
         let port_tokens = reg.tokenize_line(registered.lang_id, "    Port 2222");
-        assert!(port_tokens.iter().any(|t| t.1.as_ref() == "keyword"));
-        assert!(port_tokens.iter().any(|t| t.1.as_ref() == "number"));
+        assert!(port_tokens.iter().any(|t| t.2.as_ref() == "keyword"));
+        assert!(port_tokens.iter().any(|t| t.2.as_ref() == "number"));
     }
 
     #[test]
@@ -776,49 +872,49 @@ mod tests {
 
         // 1. let and mut declarations
         let let_tokens = reg.tokenize_line(registered.lang_id, "let mut counter = 0;");
-        assert!(let_tokens.iter().any(|t| t.1.as_ref() == "keyword.declaration"));
-        assert!(let_tokens.iter().any(|t| t.1.as_ref() == "keyword.modifier"));
-        assert!(let_tokens.iter().any(|t| t.1.as_ref() == "number"));
+        assert!(let_tokens.iter().any(|t| t.2.as_ref() == "keyword.declaration"));
+        assert!(let_tokens.iter().any(|t| t.2.as_ref() == "keyword.modifier"));
+        assert!(let_tokens.iter().any(|t| t.2.as_ref() == "number"));
 
         // 2. use statement
         let use_tokens = reg.tokenize_line(registered.lang_id, "use std::collections::HashMap;");
-        assert!(use_tokens.iter().any(|t| t.1.as_ref() == "keyword.import"));
-        assert!(use_tokens.iter().any(|t| t.1.as_ref() == "type"));
+        assert!(use_tokens.iter().any(|t| t.2.as_ref() == "keyword.import"));
+        assert!(use_tokens.iter().any(|t| t.2.as_ref() == "type"));
 
         // 3. #[test] attribute
         let attr_tokens = reg.tokenize_line(registered.lang_id, "#[test]");
-        assert!(attr_tokens.iter().any(|t| t.1.as_ref() == "punctuation.special"));
-        assert!(attr_tokens.iter().any(|t| t.1.as_ref() == "attribute"));
+        assert!(attr_tokens.iter().any(|t| t.2.as_ref() == "punctuation.special"));
+        assert!(attr_tokens.iter().any(|t| t.2.as_ref() == "attribute"));
 
         // 4. if let Some(x) = res
         let if_let_tokens = reg.tokenize_line(registered.lang_id, "if let Some(x) = res {");
-        assert!(if_let_tokens.iter().any(|t| t.1.as_ref() == "keyword.conditional"));
-        assert!(if_let_tokens.iter().any(|t| t.1.as_ref() == "keyword.declaration"));
-        assert!(if_let_tokens.iter().any(|t| t.1.as_ref() == "type")); // Some is yellow type!
-        assert!(!if_let_tokens.iter().any(|t| t.1.as_ref() == "function.call")); // not function.call!
+        assert!(if_let_tokens.iter().any(|t| t.2.as_ref() == "keyword.conditional"));
+        assert!(if_let_tokens.iter().any(|t| t.2.as_ref() == "keyword.declaration"));
+        assert!(if_let_tokens.iter().any(|t| t.2.as_ref() == "type")); // Some is yellow type!
+        assert!(!if_let_tokens.iter().any(|t| t.2.as_ref() == "function.call")); // not function.call!
 
         // 5. match, None, Result, Ok, Err
         let match_tokens = reg.tokenize_line(registered.lang_id, "match opt { None => Ok(1), _ => Err(0) }");
-        assert!(match_tokens.iter().any(|t| t.1.as_ref() == "keyword.conditional"));
-        let type_count = match_tokens.iter().filter(|t| t.1.as_ref() == "type").count();
+        assert!(match_tokens.iter().any(|t| t.2.as_ref() == "keyword.conditional"));
+        let type_count = match_tokens.iter().filter(|t| t.2.as_ref() == "type").count();
         assert!(type_count >= 3); // None, Ok, Err all typed!
 
         let result_tokens = reg.tokenize_line(registered.lang_id, "fn run() -> Result<(), Error>;");
-        assert!(result_tokens.iter().any(|t| t.1.as_ref() == "keyword.function"));
-        assert!(result_tokens.iter().any(|t| t.1.as_ref() == "function.definition"));
-        assert!(result_tokens.iter().any(|t| t.1.as_ref() == "type"));
+        assert!(result_tokens.iter().any(|t| t.2.as_ref() == "keyword.function"));
+        assert!(result_tokens.iter().any(|t| t.2.as_ref() == "function.definition"));
+        assert!(result_tokens.iter().any(|t| t.2.as_ref() == "type"));
 
         // 6. Raw strings (single-line with internal quotes and multi-line stateful)
         let raw_tokens = reg.tokenize_line(registered.lang_id, "let s = r#\"hello \"world\"\"#;");
-        assert!(raw_tokens.iter().any(|t| t.1.as_ref() == "string"));
+        assert!(raw_tokens.iter().any(|t| t.2.as_ref() == "string"));
 
         let mut state = LexState::default();
         let ml_line1 = reg.tokenize_line_stateful(registered.lang_id, "let s = r#\"first line", &mut state);
         let ml_line2 = reg.tokenize_line_stateful(registered.lang_id, "second \"line\"", &mut state);
         let ml_line3 = reg.tokenize_line_stateful(registered.lang_id, "\"#;", &mut state);
-        assert!(ml_line1.iter().any(|t| t.1.as_ref() == "string"));
-        assert!(ml_line2.iter().any(|t| t.1.as_ref() == "string"));
-        assert!(ml_line3.iter().any(|t| t.1.as_ref() == "string"));
+        assert!(ml_line1.iter().any(|t| t.2.as_ref() == "string"));
+        assert!(ml_line2.iter().any(|t| t.2.as_ref() == "string"));
+        assert!(ml_line3.iter().any(|t| t.2.as_ref() == "string"));
 
         // 7. Theme colors check: keywords in magenta, types in yellow
         let theme_str = include_str!("../languages/rust/theme.json");
