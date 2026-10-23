@@ -121,8 +121,8 @@ ie --backup config.toml
 | Shortcut | Action | Description |
 |---|---|---|
 | <kbd>Ctrl</kbd> + <kbd>s</kbd> | `save-file` | Save file |
-| <kbd>Ctrl</kbd> + <kbd>c</kbd> | `exit` | Exit editor |
-| <kbd>Esc</kbd> | `escape` | Close search bar or clear selection |
+| <kbd>Ctrl</kbd> + <kbd>c</kbd> | `abort` | Abort operation and exit with error (exit code 130) |
+| <kbd>Esc</kbd> | `escape` | Close search, collapse multi-selection, or exit clean (exit code 0) |
 | <kbd>F2</kbd> | `toggle-gutter` | Toggle gutter (line numbers & status marks) |
 | <kbd>F3</kbd> | `toggle-wrap` | Toggle soft line wrapping |
 
@@ -181,8 +181,9 @@ Keys are written as hyphen-separated values: `[modifier-][modifier-]key`
 | Action | Alias | Description |
 |---|---|---|
 | `save-file` | `save` | Save file to disk |
-| `exit` | `quit` | Exit `ie` |
-| `escape` | `esc` | Dismiss search or clear selection |
+| `exit` | `quit` | Exit `ie` cleanly (exit code 0) |
+| `abort` | `cancel` | Abort operation and exit with error (exit code 130) |
+| `escape` | `esc` | Dismiss search, clear multi-selection, or exit clean (exit code 0) |
 | `toggle-gutter` | - | Toggle line numbers / gutter |
 | `toggle-wrap` | - | Toggle soft line wrap |
 | `search` | - | Open search dialog |

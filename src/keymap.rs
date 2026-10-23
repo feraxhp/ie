@@ -15,6 +15,7 @@ pub enum IeAction {
     // Editor and file control
     SaveFile,
     Exit,
+    Abort,
     Escape,
     ToggleGutter,
     ToggleWrap,
@@ -48,6 +49,7 @@ impl FromStr for IeAction {
         match normalized.as_str() {
             "save-file" | "save" => Ok(IeAction::SaveFile),
             "exit" | "quit" => Ok(IeAction::Exit),
+            "abort" | "cancel" => Ok(IeAction::Abort),
             "escape" | "esc" => Ok(IeAction::Escape),
             "toggle-gutter" => Ok(IeAction::ToggleGutter),
             "toggle-wrap" => Ok(IeAction::ToggleWrap),
@@ -108,21 +110,21 @@ impl KeyCombo {
         Self { code, modifiers }
     }
 
-    /// Normalizes a terminal `KeyEvent` into a comparable `KeyCombo`.
-    /// Automatically infers `KeyModifiers::SHIFT` if the character is uppercase.
+    /// Converts a crossterm KeyEvent to a normalized KeyCombo.
     pub fn from_event(event: &KeyEvent) -> Self {
-        let mut clean_mods = event.modifiers
-            & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT | KeyModifiers::SUPER);
-
+        let mut modifiers = event.modifiers;
+        // Normalize: crossterm sometimes reports Shift modifier with uppercase Char
         let code = match event.code {
-            KeyCode::Char(c) => {
-                if c.is_ascii_uppercase() {
-                    clean_mods.insert(KeyModifiers::SHIFT);
-                }
+            KeyCode::Char(c) if c.is_ascii_uppercase() => {
+                modifiers.insert(KeyModifiers::SHIFT);
                 KeyCode::Char(c.to_ascii_lowercase())
             }
             other => other,
         };
+
+        // Filter only recognized modifier bits
+        let clean_mods =
+            modifiers & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT | KeyModifiers::SUPER);
 
         Self {
             code,
@@ -135,55 +137,53 @@ impl FromStr for KeyCombo {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut modifiers = KeyModifiers::empty();
-        let parts: Vec<&str> = s.split('-').map(|p| p.trim()).collect();
-
+        let parts: Vec<&str> = s.split('-').collect();
         if parts.is_empty() {
-            return Err("Empty key combination".to_string());
+            return Err("Empty key combo".to_string());
         }
 
-        let key_str = parts.last().unwrap();
-        for mod_str in &parts[..parts.len() - 1] {
-            match mod_str.to_ascii_lowercase().as_str() {
+        let mut modifiers = KeyModifiers::empty();
+        for part in &parts[..parts.len() - 1] {
+            match part.trim().to_ascii_lowercase().as_str() {
                 "ctrl" | "ctr" | "control" => modifiers.insert(KeyModifiers::CONTROL),
                 "alt" | "opt" | "option" => modifiers.insert(KeyModifiers::ALT),
                 "shift" => modifiers.insert(KeyModifiers::SHIFT),
                 "super" | "win" | "cmd" => modifiers.insert(KeyModifiers::SUPER),
-                other => return Err(format!("Unknown modifier: '{}'", other)),
+                unknown => return Err(format!("Unknown modifier: '{}'", unknown)),
             }
         }
 
-        let code = match key_str.to_ascii_lowercase().as_str() {
-            "backspace" => KeyCode::Backspace,
+        let key_str = parts.last().unwrap().trim().to_ascii_lowercase();
+        let code = match key_str.as_str() {
             "enter" | "return" => KeyCode::Enter,
-            "left" | "arrow_left" | "arrowleft" => KeyCode::Left,
-            "right" | "arrow_right" | "arrowright" => KeyCode::Right,
-            "up" | "arrow_up" | "arrowup" => KeyCode::Up,
-            "down" | "arrow_down" | "arrowdown" => KeyCode::Down,
-            "home" => KeyCode::Home,
-            "end" => KeyCode::End,
-            "pageup" | "page_up" => KeyCode::PageUp,
-            "pagedown" | "page_down" => KeyCode::PageDown,
+            "backspace" => KeyCode::Backspace,
             "tab" => KeyCode::Tab,
             "backtab" => KeyCode::BackTab,
             "delete" | "del" => KeyCode::Delete,
             "insert" | "ins" => KeyCode::Insert,
             "esc" | "escape" => KeyCode::Esc,
             "space" => KeyCode::Char(' '),
-            "/" | "slash" => KeyCode::Char('/'),
-            "_" | "underscore" => KeyCode::Char('_'),
-            f if f.starts_with('f') && f.len() > 1 && f[1..].chars().all(|c| c.is_ascii_digit()) => {
-                let num: u8 = f[1..].parse().map_err(|_| format!("Invalid function key '{}'", f))?;
+            "left" => KeyCode::Left,
+            "right" => KeyCode::Right,
+            "up" => KeyCode::Up,
+            "down" => KeyCode::Down,
+            "home" => KeyCode::Home,
+            "end" => KeyCode::End,
+            "pageup" | "pgup" => KeyCode::PageUp,
+            "pagedown" | "pgdn" => KeyCode::PageDown,
+            "slash" | "/" => KeyCode::Char('/'),
+            "underscore" | "_" => KeyCode::Char('_'),
+            s if s.starts_with('f') && s.len() > 1 => {
+                let num = s[1..].parse::<u8>().map_err(|_| format!("Invalid function key: '{}'", s))?;
                 KeyCode::F(num)
             }
-            ch if ch.chars().count() == 1 => {
-                let c = ch.chars().next().unwrap().to_ascii_lowercase();
-                KeyCode::Char(c)
+            s if s.chars().count() == 1 => {
+                KeyCode::Char(s.chars().next().unwrap())
             }
-            other => return Err(format!("Unknown key code: '{}'", other)),
+            unknown => return Err(format!("Unknown key code: '{}'", unknown)),
         };
 
-        Ok(KeyCombo { code, modifiers })
+        Ok(Self { code, modifiers })
     }
 }
 
@@ -282,7 +282,7 @@ impl IeKeymap {
 
         // Application level
         map.insert(KeyCombo::new(KeyCode::Char('s'), KeyModifiers::CONTROL), IeAction::SaveFile);
-        map.insert(KeyCombo::new(KeyCode::Char('c'), KeyModifiers::CONTROL), IeAction::Exit);
+        map.insert(KeyCombo::new(KeyCode::Char('c'), KeyModifiers::CONTROL), IeAction::Abort);
         map.insert(KeyCombo::new(KeyCode::Esc, KeyModifiers::empty()), IeAction::Escape);
         map.insert(KeyCombo::new(KeyCode::F(2), KeyModifiers::empty()), IeAction::ToggleGutter);
         map.insert(KeyCombo::new(KeyCode::F(3), KeyModifiers::empty()), IeAction::ToggleWrap);
@@ -416,6 +416,20 @@ mod tests {
     }
 
     #[test]
+    fn test_ctrl_c_maps_to_abort() {
+        let keymap = IeKeymap::default();
+        let event = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert_eq!(keymap.action_for_key(&event), Some(IeAction::Abort));
+    }
+
+    #[test]
+    fn test_escape_maps_to_escape() {
+        let keymap = IeKeymap::default();
+        let event = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
+        assert_eq!(keymap.action_for_key(&event), Some(IeAction::Escape));
+    }
+
+    #[test]
     fn test_parse_key_combo() {
         let combo = KeyCombo::from_str("ctrl-s").unwrap();
         assert_eq!(combo.code, KeyCode::Char('s'));
@@ -453,6 +467,10 @@ mod tests {
         assert_eq!(IeAction::from_str("toggle-comments").unwrap(), IeAction::ToggleComments);
         assert_eq!(IeAction::from_str("toggle-coments").unwrap(), IeAction::ToggleComments);
         assert_eq!(IeAction::from_str("save-file").unwrap(), IeAction::SaveFile);
+        assert_eq!(IeAction::from_str("exit").unwrap(), IeAction::Exit);
+        assert_eq!(IeAction::from_str("quit").unwrap(), IeAction::Exit);
+        assert_eq!(IeAction::from_str("abort").unwrap(), IeAction::Abort);
+        assert_eq!(IeAction::from_str("cancel").unwrap(), IeAction::Abort);
     }
 
     #[test]

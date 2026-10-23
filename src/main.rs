@@ -44,14 +44,17 @@ use crate::search::{SearchFocus, SearchState};
 use crate::system::{Directories, File};
 
 fn main() -> Result<(), mynox::Report> {
-    if let Err(err) = run() {
-        eprintln!("\r");
-        return Err(mynox::Report::from(err));
+    match run() {
+        Ok(0) => Ok(()),
+        Ok(code) => std::process::exit(code),
+        Err(err) => {
+            eprintln!("\r");
+            Err(mynox::Report::from(err))
+        }
     }
-    Ok(())
 }
 
-fn run() -> Result<(), mynox::Error> {
+fn run() -> Result<i32, mynox::Error> {
     let options = get_options();
     let file_path = PathBuf::from(&options.file);
 
@@ -304,7 +307,7 @@ fn run_event_loop<B: ratatui::backend::Backend>(
     backup: bool,
     permission_error: &mut Option<String>,
     first_line_row: &mut Option<u16>,
-) -> Result<(), mynox::Error> {
+) -> Result<i32, mynox::Error> {
     let mut show_gutter = true;
     let mut wrap_enabled = false;
     let mut backup_done = false;
@@ -507,7 +510,7 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                     }
 
                     if key_event.code == KeyCode::Char('c') && key_event.modifiers == KeyModifiers::CONTROL {
-                        break;
+                        return Ok(130);
                     }
 
                     if key_event.code == KeyCode::Backspace {
@@ -557,7 +560,8 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                 // Key dispatch when focus is in editor
                 if let Some(action) = keymap.action_for_key(&key_event) {
                     match action {
-                        IeAction::Exit => break,
+                        IeAction::Abort => return Ok(130),
+                        IeAction::Exit => return Ok(0),
                         IeAction::Escape => {
                             if search_state.is_active {
                                 search_state.close();
@@ -565,7 +569,7 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                             }
                             match collapse_selections_or_exit(state) {
                                 true => continue,
-                                false => break,
+                                false => return Ok(0),
                             }
                         }
                         IeAction::FocusSearch => {
@@ -747,8 +751,6 @@ fn run_event_loop<B: ratatui::backend::Backend>(
             }
         }
     }
-
-    Ok(())
 }
 
 /// Collapses multi-cursor selections to a single selection, or returns false if already single.
