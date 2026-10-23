@@ -978,4 +978,46 @@ mod tests {
 
         let _ = fs::remove_dir_all(&test_dir);
     }
+
+    #[test]
+    fn test_js_template_string_interpolation_and_closing() {
+        let js_src = include_str!("../languages/javascript/javascript.toml");
+        let reg = LanguageRegistry::new();
+        let registered = reg.register("javascript", js_src).expect("javascript must compile");
+
+        let mut state = LexState::DOC_START;
+        let line1 = "output.textContent = `[${res.timestamp}] Status: ${res.status} (latency: ${res.latency}ms)`;";
+        let tokens1 = reg.tokenize_line_stateful(registered.lang_id, line1, &mut state);
+
+        // Verify template expressions were parsed and closed
+        assert!(tokens1.iter().any(|t| t.2.as_ref() == "punctuation.special"));
+        assert!(tokens1.iter().any(|t| t.2.as_ref() == "string"));
+
+        // Next line should be back at root state and not treated as string!
+        let line2 = "console.log(\"Health check recorded:\", res);";
+        let tokens2 = reg.tokenize_line_stateful(registered.lang_id, line2, &mut state);
+        assert!(tokens2.iter().any(|t| t.2.as_ref() == "type.builtin")); // console
+        assert!(tokens2.iter().any(|t| t.2.as_ref() == "function.call")); // log
+    }
+
+    #[test]
+    fn test_ts_template_string_interpolation_and_closing() {
+        let ts_src = include_str!("../languages/typescript/typescript.toml");
+        let reg = LanguageRegistry::new();
+        let registered = reg.register("typescript", ts_src).expect("typescript must compile");
+
+        let mut state = LexState::DOC_START;
+        let line1 = "const msg: string = `Status: ${config.enabled ? \"ON\" : \"OFF\"} (port: ${config.port})`;";
+        let tokens1 = reg.tokenize_line_stateful(registered.lang_id, line1, &mut state);
+
+        assert!(tokens1.iter().any(|t| t.2.as_ref() == "punctuation.special"));
+        assert!(tokens1.iter().any(|t| t.2.as_ref() == "string"));
+
+        // Next line should be back at root state
+        let line2 = "export function run(): void {}";
+        let tokens2 = reg.tokenize_line_stateful(registered.lang_id, line2, &mut state);
+        assert!(tokens2.iter().any(|t| t.2.as_ref() == "keyword.import")); // export
+        assert!(tokens2.iter().any(|t| t.2.as_ref() == "keyword.function")); // function
+    }
 }
+

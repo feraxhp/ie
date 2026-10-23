@@ -80,10 +80,18 @@ rules = [
 ]
 
 [states.template_expr]
-include = ["comments", "expressions"]
 rules = [
+    { match = '\{', token = "punctuation.bracket", push = "brace_block" },
     { match = '\}', token = "punctuation.special", pop = true },
 ]
+include = ["comments", "expressions"]
+
+[states.brace_block]
+rules = [
+    { match = '\{', token = "punctuation.bracket", push = "brace_block" },
+    { match = '\}', token = "punctuation.bracket", pop = true },
+]
+include = ["comments", "expressions"]
 
 [states.comments]
 rules = [
