@@ -17,8 +17,13 @@ pub enum IeAction {
     Exit,
     Abort,
     Escape,
+    ToggleHelp,
     ToggleGutter,
     ToggleWrap,
+
+    // Viewport actions (inline mode)
+    IncreaseLines,
+    DecreaseLines,
 
     // Search operations
     Search,
@@ -51,8 +56,12 @@ impl FromStr for IeAction {
             "exit" | "quit" => Ok(IeAction::Exit),
             "abort" | "cancel" => Ok(IeAction::Abort),
             "escape" | "esc" => Ok(IeAction::Escape),
+            "toggle-help" | "toggle-hints" | "help" => Ok(IeAction::ToggleHelp),
             "toggle-gutter" => Ok(IeAction::ToggleGutter),
             "toggle-wrap" => Ok(IeAction::ToggleWrap),
+
+            "increase-lines" | "add-line" | "increase-inline-lines" => Ok(IeAction::IncreaseLines),
+            "decrease-lines" | "remove-line" | "decrease-inline-lines" => Ok(IeAction::DecreaseLines),
 
             "search" => Ok(IeAction::Search),
             "next-match" => Ok(IeAction::NextMatch),
@@ -202,8 +211,24 @@ impl fmt::Display for KeyCombo {
             write!(f, "super-")?;
         }
         match self.code {
+            KeyCode::Char(' ') => write!(f, "space"),
             KeyCode::Char(c) => write!(f, "{}", c),
             KeyCode::F(n) => write!(f, "f{}", n),
+            KeyCode::Esc => write!(f, "esc"),
+            KeyCode::Enter => write!(f, "enter"),
+            KeyCode::Backspace => write!(f, "backspace"),
+            KeyCode::Tab => write!(f, "tab"),
+            KeyCode::BackTab => write!(f, "backtab"),
+            KeyCode::Delete => write!(f, "delete"),
+            KeyCode::Insert => write!(f, "insert"),
+            KeyCode::Left => write!(f, "left"),
+            KeyCode::Right => write!(f, "right"),
+            KeyCode::Up => write!(f, "up"),
+            KeyCode::Down => write!(f, "down"),
+            KeyCode::Home => write!(f, "home"),
+            KeyCode::End => write!(f, "end"),
+            KeyCode::PageUp => write!(f, "pageup"),
+            KeyCode::PageDown => write!(f, "pagedown"),
             other => write!(f, "{:?}", other),
         }
     }
@@ -242,7 +267,18 @@ impl IeKeymap {
         Self::default()
     }
 
-    /// Default keybindings defined for `ie`.
+    /// Looks up the human-readable string representation of the first keycombo
+    /// bound to the specified `action`. Returns `fallback` if not found.
+    pub fn key_for_action(&self, action: IeAction, fallback: &str) -> String {
+        for (combo, act) in &self.bindings {
+            if *act == action {
+                return combo.to_string();
+            }
+        }
+        fallback.to_string()
+    }
+
+    /// Default keybindings defined for `ie``.
     pub fn default_bindings() -> HashMap<KeyCombo, IeAction> {
         let mut map = HashMap::new();
 
@@ -284,8 +320,11 @@ impl IeKeymap {
         map.insert(KeyCombo::new(KeyCode::Char('s'), KeyModifiers::CONTROL), IeAction::SaveFile);
         map.insert(KeyCombo::new(KeyCode::Char('c'), KeyModifiers::CONTROL), IeAction::Abort);
         map.insert(KeyCombo::new(KeyCode::Esc, KeyModifiers::empty()), IeAction::Escape);
+        map.insert(KeyCombo::new(KeyCode::F(1), KeyModifiers::empty()), IeAction::ToggleHelp);
         map.insert(KeyCombo::new(KeyCode::F(2), KeyModifiers::empty()), IeAction::ToggleGutter);
         map.insert(KeyCombo::new(KeyCode::F(3), KeyModifiers::empty()), IeAction::ToggleWrap);
+        map.insert(KeyCombo::new(KeyCode::F(5), KeyModifiers::empty()), IeAction::IncreaseLines);
+        map.insert(KeyCombo::new(KeyCode::F(6), KeyModifiers::empty()), IeAction::DecreaseLines);
 
         // Requested specific features
         // Search dialog (ctrl-f / ctr-f)
@@ -407,6 +446,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_key_for_action() {
+        let keymap = IeKeymap::default();
+        assert_eq!(keymap.key_for_action(IeAction::Abort, "ctrl-c"), "ctrl-c");
+        assert_eq!(keymap.key_for_action(IeAction::SaveFile, "ctrl-s"), "ctrl-s");
+        assert_eq!(keymap.key_for_action(IeAction::Escape, "esc"), "esc");
+    }
+
+    #[test]
     fn test_shift_c_matches_toggle_comments() {
         let keymap = IeKeymap::default();
 
@@ -427,6 +474,15 @@ mod tests {
         let keymap = IeKeymap::default();
         let event = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
         assert_eq!(keymap.action_for_key(&event), Some(IeAction::Escape));
+    }
+
+    #[test]
+    fn test_f5_f6_default_bindings() {
+        let keymap = IeKeymap::default();
+        let f5_event = KeyEvent::new(KeyCode::F(5), KeyModifiers::empty());
+        assert_eq!(keymap.action_for_key(&f5_event), Some(IeAction::IncreaseLines));
+        let f6_event = KeyEvent::new(KeyCode::F(6), KeyModifiers::empty());
+        assert_eq!(keymap.action_for_key(&f6_event), Some(IeAction::DecreaseLines));
     }
 
     #[test]
@@ -457,6 +513,10 @@ mod tests {
 
         let combo = KeyCombo::from_str("f2").unwrap();
         assert_eq!(combo.code, KeyCode::F(2));
+        let combo = KeyCombo::from_str("f5").unwrap();
+        assert_eq!(combo.code, KeyCode::F(5));
+        let combo = KeyCombo::from_str("f6").unwrap();
+        assert_eq!(combo.code, KeyCode::F(6));
     }
 
     #[test]
@@ -471,22 +531,24 @@ mod tests {
         assert_eq!(IeAction::from_str("quit").unwrap(), IeAction::Exit);
         assert_eq!(IeAction::from_str("abort").unwrap(), IeAction::Abort);
         assert_eq!(IeAction::from_str("cancel").unwrap(), IeAction::Abort);
+        assert_eq!(IeAction::from_str("increase-lines").unwrap(), IeAction::IncreaseLines);
+        assert_eq!(IeAction::from_str("add-line").unwrap(), IeAction::IncreaseLines);
+        assert_eq!(IeAction::from_str("decrease-lines").unwrap(), IeAction::DecreaseLines);
+        assert_eq!(IeAction::from_str("remove-line").unwrap(), IeAction::DecreaseLines);
     }
 
     #[test]
     fn test_keymap_mode_extend() {
-        let json = r#"{
-            "mode": "extend",
-            "keys": {
-                "ctrl-s": "save-file",
-                "ctrl-k": "delete-line"
-            }
-        }"#;
+        let json = r#"{"mode": "extend", "keys": {"ctrl-s": "save-file", "ctrl-k": "delete-line"}}"#;
 
         let keymap = IeKeymap::from_json_str(json, Path::new("test.json")).unwrap();
         // Preserves default bindings
         let f2_combo = KeyCombo::new(KeyCode::F(2), KeyModifiers::empty());
         assert_eq!(keymap.bindings.get(&f2_combo), Some(&IeAction::ToggleGutter));
+        let f5_combo = KeyCombo::new(KeyCode::F(5), KeyModifiers::empty());
+        assert_eq!(keymap.bindings.get(&f5_combo), Some(&IeAction::IncreaseLines));
+        let f6_combo = KeyCombo::new(KeyCode::F(6), KeyModifiers::empty());
+        assert_eq!(keymap.bindings.get(&f6_combo), Some(&IeAction::DecreaseLines));
 
         // Overrides or adds new keys
         let ctrl_k = KeyCombo::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
@@ -495,12 +557,7 @@ mod tests {
 
     #[test]
     fn test_keymap_mode_absolute() {
-        let json = r#"{
-            "mode": "absolute",
-            "keys": {
-                "ctrl-s": "save-file"
-            }
-        }"#;
+        let json = r#"{"mode": "absolute", "keys": {"ctrl-s": "save-file"}}"#;
 
         let keymap = IeKeymap::from_json_str(json, Path::new("test.json")).unwrap();
         assert_eq!(keymap.bindings.len(), 1);

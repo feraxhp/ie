@@ -8,7 +8,7 @@ mod prompt;
 mod search;
 mod system;
 
-use std::io::{stdout, Write};
+use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 
 use crossterm::event::{
@@ -20,7 +20,7 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
@@ -72,7 +72,7 @@ fn main() -> Result<(), mynox::Report> {
 }
 
 fn run() -> Result<i32, mynox::Error> {
-    let options = get_options();
+    let mut options = get_options();
     let file_path = PathBuf::from(&options.file);
 
     // 1. Resolve or create user configuration directory for dynamic language specifications
@@ -300,6 +300,7 @@ fn run() -> Result<i32, mynox::Error> {
 
     let res = run_event_loop(
         &mut terminal,
+        &mut options.mode,
         &mut state,
         &mut unsaved_lines,
         &keymap,
@@ -349,10 +350,12 @@ fn run() -> Result<i32, mynox::Error> {
 enum BottomBarMode<'a> {
     Search,
     Error(&'a str),
+    EditHints,
 }
 
-fn run_event_loop<B: ratatui::backend::Backend>(
-    terminal: &mut Terminal<B>,
+fn run_event_loop(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    mode: &mut TUImode,
     state: &mut State,
     unsaved_lines: &mut UnsavedLinePlugin,
     keymap: &IeKeymap,
@@ -367,19 +370,20 @@ fn run_event_loop<B: ratatui::backend::Backend>(
 ) -> Result<i32, mynox::Error> {
     let mut show_gutter = true;
     let mut wrap_enabled = false;
+    let mut show_help = false;
     let mut backup_done = false;
+    let mut rendered_area = Rect::default();
 
     loop {
         terminal
             .draw(|f| {
                 let area = f.area();
+                rendered_area = area;
 
                 // Track the row of the first rendered line for clean inline exit
-                if first_line_row.is_none() {
-                    *first_line_row = Some(area.y);
-                }
+                *first_line_row = Some(area.y);
 
-                // Split vertically when either search bar or write permission error bar is active
+                // Split vertically: always reserve 1 row at the bottom for status / search / error / edit hints
                 let (editor_area, bottom_bar) = if search_state.is_active {
                     let chunks = Layout::default()
                         .direction(Direction::Vertical)
@@ -398,6 +402,15 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                         ])
                         .split(area);
                     (chunks[0], Some((chunks[1], BottomBarMode::Error(err_msg))))
+                } else if show_help && area.height > 1 {
+                    let chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Min(1),    // Editor body
+                            Constraint::Length(1), // Status / Edit bar
+                        ])
+                        .split(area);
+                    (chunks[0], Some((chunks[1], BottomBarMode::EditHints)))
                 } else {
                     (area, None)
                 };
@@ -446,10 +459,11 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                                 )
                             };
 
+                            let esc_key = keymap.key_for_action(IeAction::Escape, "esc");
                             let hints = if search_state.focus == SearchFocus::SearchInput {
-                                "  (shift-e: editor | shift-n: next | shift-p: prev | esc: close)"
+                                format!("  (shift-e: editor | shift-n: next | shift-p: prev | {}: close search)", esc_key)
                             } else {
-                                "  (shift-s: search | shift-n: next | shift-p: prev | esc: close)"
+                                format!("  (shift-s: search | shift-n: next | shift-p: prev | {}: close search)", esc_key)
                             };
 
                             let spans = if search_state.focus == SearchFocus::SearchInput {
@@ -489,6 +503,32 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                                 ),
                             ]));
                             f.render_widget(error_bar, bar_rect);
+                        }
+                        BottomBarMode::EditHints => {
+                            let cancel_key = keymap.key_for_action(IeAction::Abort, "ctrl-c");
+                            let save_key = keymap.key_for_action(IeAction::SaveFile, "ctrl-s");
+                            let esc_key = keymap.key_for_action(IeAction::Escape, "esc");
+
+                            let esc_desc = if search_state.is_active {
+                                "close search"
+                            } else if state.selection().count() > 1 {
+                                "collapse selections"
+                            } else {
+                                "exit"
+                            };
+
+                            let spans = vec![
+                                Span::raw(" "),
+                                Span::styled(cancel_key, Style::default().fg(Color::DarkGray)),
+                                Span::styled(": cancel  ", Style::default().fg(Color::DarkGray)),
+                                Span::styled(save_key, Style::default().fg(Color::DarkGray)),
+                                Span::styled(": save  ", Style::default().fg(Color::DarkGray)),
+                                Span::styled(esc_key, Style::default().fg(Color::DarkGray)),
+                                Span::styled(format!(": {}", esc_desc), Style::default().fg(Color::DarkGray)),
+                            ];
+
+                            let bar = Paragraph::new(Line::from(spans));
+                            f.render_widget(bar, bar_rect);
                         }
                     }
                 }
@@ -655,12 +695,63 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                             search_state.open(state);
                             continue;
                         }
+                        IeAction::ToggleHelp => {
+                            show_help = !show_help;
+                            continue;
+                        }
                         IeAction::ToggleGutter => {
                             show_gutter = !show_gutter;
                             continue;
                         }
                         IeAction::ToggleWrap => {
                             wrap_enabled = !wrap_enabled;
+                            continue;
+                        }
+                        IeAction::IncreaseLines => {
+                            if let TUImode::INLINE(ref mut lines) = *mode {
+                                let (_, term_height) = crossterm::terminal::size().unwrap_or((80, 24));
+                                let max_lines = term_height.max(2);
+                                if *lines < max_lines {
+                                    *lines += 1;
+                                    let new_lines = *lines;
+                                    let _ = execute!(
+                                        terminal.backend_mut(),
+                                        crossterm::cursor::MoveTo(0, rendered_area.y),
+                                        crossterm::terminal::Clear(crossterm::terminal::ClearType::FromCursorDown),
+                                    );
+                                    if let Ok(new_term) = Terminal::with_options(
+                                        CrosstermBackend::new(stdout()),
+                                        TerminalOptions {
+                                            viewport: Viewport::Inline(new_lines),
+                                        },
+                                    ) {
+                                        *terminal = new_term;
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+                        IeAction::DecreaseLines => {
+                            if let TUImode::INLINE(ref mut lines) = *mode {
+                                let min_lines = 2;
+                                if *lines > min_lines {
+                                    *lines -= 1;
+                                    let new_lines = *lines;
+                                    let _ = execute!(
+                                        terminal.backend_mut(),
+                                        crossterm::cursor::MoveTo(0, rendered_area.y),
+                                        crossterm::terminal::Clear(crossterm::terminal::ClearType::FromCursorDown),
+                                    );
+                                    if let Ok(new_term) = Terminal::with_options(
+                                        CrosstermBackend::new(stdout()),
+                                        TerminalOptions {
+                                            viewport: Viewport::Inline(new_lines),
+                                        },
+                                    ) {
+                                        *terminal = new_term;
+                                    }
+                                }
+                            }
                             continue;
                         }
                         IeAction::SaveFile => {

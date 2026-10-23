@@ -123,8 +123,11 @@ ie --backup config.toml
 | <kbd>Ctrl</kbd> + <kbd>s</kbd> | `save-file` | Save file |
 | <kbd>Ctrl</kbd> + <kbd>c</kbd> | `abort` | Abort operation and exit with error (exit code 130) |
 | <kbd>Esc</kbd> | `escape` | Close search, collapse multi-selection, or exit clean (exit code 0) |
+| <kbd>F1</kbd> | `toggle-help` | Toggle status and shortcut help bar |
 | <kbd>F2</kbd> | `toggle-gutter` | Toggle gutter (line numbers & status marks) |
 | <kbd>F3</kbd> | `toggle-wrap` | Toggle soft line wrapping |
+| <kbd>F5</kbd> | `increase-lines` | Increase inline viewport height by 1 line (inline mode only) |
+| <kbd>F6</kbd> | `decrease-lines` | Decrease inline viewport height by 1 line (inline mode only) |
 
 ---
 
@@ -163,7 +166,7 @@ Then create `~/.config/ie/keymap.json`:
     "ctrl-d": "delete-line",
     "alt-d": "clone-line-down",
     "ctrl-slash": "toggle-comments",
-    "f5": "toggle-gutter"
+    "f4": "toggle-gutter"
   }
 }
 ```
@@ -184,8 +187,11 @@ Keys are written as hyphen-separated values: `[modifier-][modifier-]key`
 | `exit` | `quit` | Exit `ie` cleanly (exit code 0) |
 | `abort` | `cancel` | Abort operation and exit with error (exit code 130) |
 | `escape` | `esc` | Dismiss search, clear multi-selection, or exit clean (exit code 0) |
+| `toggle-help` | `toggle-hints`, `help` | Toggle status and shortcut help bar |
 | `toggle-gutter` | - | Toggle line numbers / gutter |
 | `toggle-wrap` | - | Toggle soft line wrap |
+| `increase-lines` | `add-line`, `increase-inline-lines` | Increase inline viewport height by 1 line |
+| `decrease-lines` | `remove-line`, `decrease-inline-lines` | Decrease inline viewport height by 1 line |
 | `search` | - | Open search dialog |
 | `next-match` | - | Jump to next search result |
 | `prev-match` | - | Jump to previous search result |
