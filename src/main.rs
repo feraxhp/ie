@@ -22,7 +22,7 @@ use texera::{
     apply_action, DefaultKeymap, EditorAction, EditorView, EditorViewState, HistoryPlugin, Keymap,
     LineNumberPlugin, HighlightPlugin, UnsavedLinePlugin,
 };
-use texera_core::{AllowMultipleSelections, State};
+use texera_core::{AllowMultipleSelections, State, TransactionSpec};
 
 use crate::command::{get_options, TUImode};
 use crate::highlight::{detect_language, init_highlighter};
@@ -281,12 +281,19 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                     format!("Failed to read keyboard event: {}", e)
                 )
             })? {
-                // Exit with Esc or Ctrl+C
-                if key_event.code == KeyCode::Esc
-                    || (key_event.code == KeyCode::Char('c')
-                        && key_event.modifiers.contains(KeyModifiers::CONTROL))
+                // Exit with Ctrl+C
+                if key_event.code == KeyCode::Char('c')
+                    && key_event.modifiers.contains(KeyModifiers::CONTROL)
                 {
                     break;
+                }
+
+                // Handle Esc: collapse multiple selections down to one, or exit if already single
+                if key_event.code == KeyCode::Esc {
+                    match collapse_selections_or_exit(state) {
+                        true => continue,
+                        false => break,
+                    }
                 }
 
                 // Toggle Line Gutter with F2
@@ -362,4 +369,50 @@ fn run_event_loop<B: ratatui::backend::Backend>(
 
 fn is_save_pressed(key: &KeyEvent) -> bool {
     key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s')
+}
+
+/// Collapses multi-cursor selections to a single selection, or returns false if already single.
+pub fn collapse_selections_or_exit(state: &mut State) -> bool {
+    if state.selection().count() > 1 {
+        let single_sel = state.selection().clone().as_single();
+        if let Ok(result) = state.clone().update(TransactionSpec::default().with_selection(single_sel)) {
+            *state = result.state().clone();
+        }
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use texera_core::{Selection, SelectionRange};
+
+    #[test]
+    fn test_collapse_multiple_selections_to_single_on_escape() {
+        let mut state = State::from("hello world\nsecond line\nthird line").with_extensions([
+            AllowMultipleSelections(true).into(),
+        ]);
+
+        // Add multiple cursors / selections
+        let sel = Selection::from(vec![
+            SelectionRange::cursor(0),
+            SelectionRange::cursor(6),
+            SelectionRange::cursor(12),
+        ]);
+        let update_res = state.clone().update(TransactionSpec::default().with_selection(sel)).unwrap();
+        state = update_res.state().clone();
+        assert_eq!(state.selection().count(), 3);
+
+        // When multiple selections exist, collapse returns true and leaves exactly 1 selection
+        let handled = collapse_selections_or_exit(&mut state);
+        assert!(handled);
+        assert_eq!(state.selection().count(), 1);
+
+        // When only 1 selection exists, collapse returns false (signaling to exit)
+        let handled_second = collapse_selections_or_exit(&mut state);
+        assert!(!handled_second);
+        assert_eq!(state.selection().count(), 1);
+    }
 }
