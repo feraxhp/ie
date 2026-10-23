@@ -1,5 +1,5 @@
 {
-  "keyword": "magenta",
+  "keyword": "blue",
   "keyword.directive": "magenta",
   "property": "blue",
   "type": "yellow",
@@ -9,7 +9,7 @@
   "number.float": "yellow",
   "boolean": "yellow",
   "constant.builtin": "yellow",
-  "variable": "white",
+  "variable": "yellow",
   "operator": "cyan",
   "punctuation.bracket": "darkgray",
   "punctuation.delimiter": "darkgray",

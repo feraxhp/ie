@@ -2,7 +2,7 @@
   "keyword": "magenta",
   "type": "yellow",
   "string": "green",
-  "variable": "white",
+  "variable": "lightblue",
   "number": "yellow",
   "punctuation.delimiter": "darkgray",
   "comment": "darkgray"

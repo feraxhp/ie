@@ -4,18 +4,19 @@ extensions = ["html", "htm"]
 
 [states.root]
 rules = [
+    # Doctype
+    { match = '<!DOCTYPE html>', token = "keyword.directive.doctype" },
     # HTML Comments
     { match = '<!--', token = "comment", push = "comment" },
-    # Doctype
     { match = '<![dD][oO][cC][tT][yY][pP][eE][^>]*>', token = "keyword.directive" },
     # Script tag embedded JS
     { match = '<script[^>]*>', token = "punctuation.bracket", embed = "javascript", embed_end = '</script>' },
     # Style tag embedded CSS
     { match = '<style[^>]*>', token = "punctuation.bracket", embed = "css", embed_end = '</style>' },
-    # Closing tags
-    { match = '</[a-zA-Z0-9_\-]+>', token = "keyword" },
+    # Closing tag
+    { match = '</', token = "punctuation.bracket", push = "tag_close" },
     # Opening tag starts tag attribute context
-    { match = '<[a-zA-Z0-9_\-]+', token = "keyword", push = "tag" },
+    { match = '<', token = "punctuation.bracket", push = "tag" },
     # Character entities
     { match = '&[a-zA-Z0-9#]+;', token = "constant.builtin" },
 ]
@@ -23,10 +24,27 @@ rules = [
 [states.tag]
 rules = [
     { match = '/>|>', token = "punctuation.bracket", pop = true },
+    { match = '[a-zA-Z0-9_\-]+', token = "keyword", set = "tag_attrs" },
+]
+
+[states.tag_attrs]
+rules = [
+    { match = '/>|>', token = "punctuation.bracket", pop = true },
     { match = '"[^"]*"', token = "string" },
     { match = "'[^']*'", token = "string" },
     { match = '=', token = "operator" },
     { match = '[a-zA-Z0-9_\-]+', token = "property" },
+]
+
+[states.tag_close]
+rules = [
+    { match = '/>|>', token = "punctuation.bracket", pop = true },
+    { match = '[a-zA-Z0-9_\-]+', token = "keyword", set = "tag_close_after" },
+]
+
+[states.tag_close_after]
+rules = [
+    { match = '/>|>', token = "punctuation.bracket", pop = true },
 ]
 
 [states.comment]

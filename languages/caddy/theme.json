@@ -1,9 +1,15 @@
 {
   "keyword": "magenta",
+  "keyword.modifier": "magenta",
   "type": "yellow",
   "string": "green",
-  "variable": "white",
+  "string.escape": "magenta",
+  "variable": "lightblue",
   "number": "yellow",
+  "constant.numeric": "yellow",
+  "constant.builtin": "cyan",
+  "operator": "cyan",
   "punctuation.bracket": "darkgray",
+  "punctuation.delimiter": "darkgray",
   "comment": "darkgray"
 }

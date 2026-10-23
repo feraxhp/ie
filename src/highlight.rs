@@ -371,7 +371,7 @@ fn init_global_theme(theme: &mut ThemeMap) {
         ("number", ratatui::style::Color::Yellow),
         ("boolean", ratatui::style::Color::Yellow),
         ("constant", ratatui::style::Color::Yellow),
-        ("variable", ratatui::style::Color::White),
+        ("variable", ratatui::style::Color::LightBlue),
         ("operator", ratatui::style::Color::Cyan),
         ("comment", ratatui::style::Color::DarkGray),
         ("punctuation.bracket", ratatui::style::Color::DarkGray),
@@ -998,6 +998,64 @@ mod tests {
     }
 
     #[test]
+    fn test_html_tag_and_bracket_tokens() {
+        let html_src = include_str!("../languages/html/html.toml");
+        let reg = LanguageRegistry::new();
+        let registered = reg.register("html", html_src).expect("html must compile");
+
+        // 1. Tag with attribute: <html lang="en">
+        let tokens = reg.tokenize_line(registered.lang_id, "<html lang=\"en\">");
+        // Verify '<' is punctuation.bracket (darkgray), NOT keyword (blue)
+        assert_eq!(tokens[0].0, 0..1);
+        assert_eq!(tokens[0].2.as_ref(), "punctuation.bracket");
+
+        // Verify 'html' is keyword (blue)
+        assert_eq!(tokens[1].0, 1..5);
+        assert_eq!(tokens[1].2.as_ref(), "keyword");
+
+        // Verify 'lang' is property (yellow)
+        let lang_token = tokens.iter().find(|t| &"<html lang=\"en\">"[t.0.clone()] == "lang").unwrap();
+        assert_eq!(lang_token.2.as_ref(), "property");
+
+        // Verify '=' is operator
+        let eq_token = tokens.iter().find(|t| &"<html lang=\"en\">"[t.0.clone()] == "=").unwrap();
+        assert_eq!(eq_token.2.as_ref(), "operator");
+
+        // Verify ""en"" is string
+        let str_token = tokens.iter().find(|t| &"<html lang=\"en\">"[t.0.clone()] == "\"en\"").unwrap();
+        assert_eq!(str_token.2.as_ref(), "string");
+
+        // Verify '>' is punctuation.bracket (darkgray)
+        let close_token = tokens.last().unwrap();
+        assert_eq!(&"<html lang=\"en\">"[close_token.0.clone()], ">");
+        assert_eq!(close_token.2.as_ref(), "punctuation.bracket");
+
+        // 2. Simple tag: <head>
+        let head_tokens = reg.tokenize_line(registered.lang_id, "<head>");
+        assert_eq!(head_tokens[0].2.as_ref(), "punctuation.bracket");
+        assert_eq!(head_tokens[1].2.as_ref(), "keyword");
+        assert_eq!(head_tokens[2].2.as_ref(), "punctuation.bracket");
+
+        // 3. Closing tag: </title>
+        let close_tokens = reg.tokenize_line(registered.lang_id, "</title>");
+        assert_eq!(close_tokens[0].2.as_ref(), "punctuation.bracket"); // </
+        assert_eq!(close_tokens[1].2.as_ref(), "keyword"); // title
+        assert_eq!(close_tokens[2].2.as_ref(), "punctuation.bracket"); // >
+
+        // 4. Closing tag with invalid attributes: </html sdadw="sdadw">
+        let invalid_close_tokens = reg.tokenize_line(registered.lang_id, "</html sdadw=\"sdadw\">");
+        assert_eq!(invalid_close_tokens[0].2.as_ref(), "punctuation.bracket"); // </
+        assert_eq!(invalid_close_tokens[1].2.as_ref(), "keyword"); // html
+        // Verify that sdadw, =, "sdadw" are NOT parsed as property, operator, or string!
+        assert!(!invalid_close_tokens.iter().any(|t| t.2.as_ref() == "property"));
+        assert!(!invalid_close_tokens.iter().any(|t| t.2.as_ref() == "operator"));
+        assert!(!invalid_close_tokens.iter().any(|t| t.2.as_ref() == "string"));
+        let last_token = invalid_close_tokens.last().unwrap();
+        assert_eq!(&"</html sdadw=\"sdadw\">"[last_token.0.clone()], ">");
+        assert_eq!(last_token.2.as_ref(), "punctuation.bracket"); // >
+    }
+
+    #[test]
     fn test_rust_highlighting_tokens() {
         let rust_src = include_str!("../languages/rust/rust.toml");
         let reg = LanguageRegistry::new();
@@ -1154,17 +1212,225 @@ mod tests {
     }
 
     #[test]
+    fn test_c_cpp_preprocessor_highlighting_tokens() {
+        let dummy_dir = PathBuf::from("/tmp/nonexistent_ie_test_dir_123");
+        let highlighter = init_highlighter(&dummy_dir);
+
+        // Test C
+        let c_id = highlighter.registry().lang_id("c").expect("c in registry");
+        let mut state = LexState::default();
+
+        // 1. #include <stdio.h>
+        let tokens = highlighter.registry().tokenize_line_stateful(c_id, "#include <stdio.h>", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword.directive"); // #include
+        assert_eq!(tokens[1].2.as_ref(), "string"); // <stdio.h>
+
+        // 2. #define BUFFER_CAPACITY 1024
+        let mut state = LexState::default();
+        let tokens = highlighter.registry().tokenize_line_stateful(c_id, "#define BUFFER_CAPACITY 1024", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword.directive"); // #define
+        assert_eq!(tokens[1].2.as_ref(), "constant"); // BUFFER_CAPACITY
+        assert_eq!(tokens[2].2.as_ref(), "number"); // 1024
+
+        // 3. #  define FORCE_INLINE inline __attribute__((always_inline))
+        let mut state = LexState::default();
+        let tokens = highlighter.registry().tokenize_line_stateful(c_id, "#  define FORCE_INLINE inline __attribute__((always_inline))", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword.directive"); // #  define
+        assert_eq!(tokens[1].2.as_ref(), "constant"); // FORCE_INLINE
+        assert_eq!(tokens[2].2.as_ref(), "keyword.modifier"); // inline
+        assert_eq!(tokens[3].2.as_ref(), "keyword.modifier"); // __attribute__
+
+        // 4. #if defined(__GNUC__) || defined(__clang__)
+        let mut state = LexState::default();
+        let tokens = highlighter.registry().tokenize_line_stateful(c_id, "#if defined(__GNUC__) || defined(__clang__)", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword.directive"); // #if
+        assert_eq!(tokens[1].2.as_ref(), "keyword.directive"); // defined
+        assert_eq!(tokens[3].2.as_ref(), "variable"); // __GNUC__
+        assert_eq!(tokens[5].2.as_ref(), "operator"); // ||
+        assert_eq!(tokens[6].2.as_ref(), "keyword.directive"); // defined
+        assert_eq!(tokens[8].2.as_ref(), "variable"); // __clang__
+
+        // Test C++
+        let cpp_id = highlighter.registry().lang_id("cpp").expect("cpp in registry");
+        let mut state = LexState::default();
+        let tokens = highlighter.registry().tokenize_line_stateful(cpp_id, "#include <iostream>", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword.directive"); // #include
+        assert_eq!(tokens[1].2.as_ref(), "string"); // <iostream>
+    }
+
+    #[test]
+    fn test_caddyfile_highlighting_tokens() {
+        let dummy_dir = PathBuf::from("/tmp/nonexistent_ie_test_dir_123");
+        let highlighter = init_highlighter(&dummy_dir);
+        let caddy_id = highlighter.registry().lang_id("caddy").expect("caddy in registry");
+
+        // 1. Domains: example.com, www.example.com {
+        let mut state = LexState::default();
+        let tokens = highlighter.registry().tokenize_line_stateful(caddy_id, "example.com, www.example.com {", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "type"); // example.com
+        assert_eq!(tokens[1].2.as_ref(), "punctuation.delimiter"); // ,
+        assert_eq!(tokens[2].2.as_ref(), "type"); // www.example.com
+        assert_eq!(tokens[3].2.as_ref(), "punctuation.bracket"); // {
+
+        // 2. root * /var/www/html
+        let tokens = highlighter.registry().tokenize_line_stateful(caddy_id, "    root * /var/www/html", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // root
+        assert_eq!(tokens[1].2.as_ref(), "operator"); // *
+        assert_eq!(tokens[2].2.as_ref(), "string"); // /var/www/html
+
+        // 3. encode gzip zstd
+        let tokens = highlighter.registry().tokenize_line_stateful(caddy_id, "    encode gzip zstd", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // encode
+        assert_eq!(tokens[1].2.as_ref(), "constant.builtin"); // gzip
+        assert_eq!(tokens[2].2.as_ref(), "constant.builtin"); // zstd
+
+        // 4. Matcher definition: @api {
+        let tokens = highlighter.registry().tokenize_line_stateful(caddy_id, "    @api {", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "type"); // @api
+        assert_eq!(tokens[1].2.as_ref(), "punctuation.bracket"); // {
+
+        // 5. Matcher directive: path /api/*
+        let tokens = highlighter.registry().tokenize_line_stateful(caddy_id, "        path /api/*", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // path
+        assert_eq!(tokens[1].2.as_ref(), "string"); // /api/*
+
+        // 6. reverse_proxy @api localhost:8080
+        let tokens = highlighter.registry().tokenize_line_stateful(caddy_id, "    reverse_proxy @api localhost:8080", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // reverse_proxy
+        assert_eq!(tokens[1].2.as_ref(), "type"); // @api
+        assert_eq!(tokens[2].2.as_ref(), "type"); // localhost:8080
+
+        // 7. Placeholders inside string: respond "{http.error.status_code} {http.error.status_text}"
+        let tokens = highlighter.registry().tokenize_line_stateful(caddy_id, "        respond \"{http.error.status_code} {http.error.status_text}\"", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // respond
+        assert_eq!(tokens[1].2.as_ref(), "string"); // "
+        assert_eq!(tokens[2].2.as_ref(), "variable"); // {http.error.status_code}
+        assert_eq!(tokens[4].2.as_ref(), "variable"); // {http.error.status_text}
+        assert_eq!(tokens[5].2.as_ref(), "string"); // "
+
+        // 8. Log directive and output file path: output file /var/log/caddy/access.log
+        let tokens = highlighter.registry().tokenize_line_stateful(caddy_id, "        output file /var/log/caddy/access.log", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword.modifier"); // output
+        assert_eq!(tokens[1].2.as_ref(), "constant.builtin"); // file
+        assert_eq!(tokens[2].2.as_ref(), "string"); // /var/log/caddy/access.log
+
+        // 9. Port block and respond status code: :8081 { respond "OK" 200 }
+        let tokens = highlighter.registry().tokenize_line_stateful(caddy_id, ":8081 {", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "type"); // :8081
+        assert_eq!(tokens[1].2.as_ref(), "punctuation.bracket"); // {
+
+        let tokens = highlighter.registry().tokenize_line_stateful(caddy_id, "    respond \"OK\" 200", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // respond
+        assert_eq!(tokens[1].2.as_ref(), "string"); // "OK"
+        assert_eq!(tokens[2].2.as_ref(), "constant.numeric"); // 200
+    }
+
+    #[test]
+    fn test_yaml_highlighting_tokens() {
+        let dummy_dir = PathBuf::from("/tmp/nonexistent_ie_test_dir_123");
+        let highlighter = init_highlighter(&dummy_dir);
+        let yaml_id = highlighter.registry().lang_id("yaml").expect("yaml in registry");
+        let mut state = LexState::default();
+
+        // 1. Header delimiter: ---
+        let tokens = highlighter.registry().tokenize_line_stateful(yaml_id, "---", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "punctuation.delimiter");
+
+        // 2. apiVersion: apps/v1
+        let tokens = highlighter.registry().tokenize_line_stateful(yaml_id, "apiVersion: apps/v1", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // apiVersion
+        assert_eq!(tokens[1].2.as_ref(), "punctuation.delimiter"); // :
+
+        // 3. Namespaced key: app.kubernetes.io/name: ie-gateway
+        let tokens = highlighter.registry().tokenize_line_stateful(yaml_id, "    app.kubernetes.io/name: ie-gateway", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // app.kubernetes.io/name
+        assert_eq!(tokens[1].2.as_ref(), "punctuation.delimiter"); // :
+
+        // 4. Anchors & aliases: defaults: &resource_defaults
+        let tokens = highlighter.registry().tokenize_line_stateful(yaml_id, "defaults: &resource_defaults", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // defaults
+        assert_eq!(tokens[1].2.as_ref(), "punctuation.delimiter"); // :
+        assert_eq!(tokens[2].2.as_ref(), "variable"); // &resource_defaults
+
+        // 5. Merge key: <<: *resource_defaults
+        let tokens = highlighter.registry().tokenize_line_stateful(yaml_id, "            <<: *resource_defaults", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "operator"); // <<
+        assert_eq!(tokens[1].2.as_ref(), "punctuation.delimiter"); // :
+        assert_eq!(tokens[2].2.as_ref(), "variable"); // *resource_defaults
+
+        // 6. Numbers with units: memory: 2Gi
+        let tokens = highlighter.registry().tokenize_line_stateful(yaml_id, "    memory: 2Gi", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // memory
+        assert_eq!(tokens[1].2.as_ref(), "punctuation.delimiter"); // :
+        assert_eq!(tokens[2].2.as_ref(), "number"); // 2Gi
+
+        // 7. Percentages: maxSurge: 25%
+        let tokens = highlighter.registry().tokenize_line_stateful(yaml_id, "      maxSurge: 25%", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // maxSurge
+        assert_eq!(tokens[1].2.as_ref(), "punctuation.delimiter"); // :
+        assert_eq!(tokens[2].2.as_ref(), "number"); // 25%
+
+        // 8. List bullet item: - name: http
+        let tokens = highlighter.registry().tokenize_line_stateful(yaml_id, "        - name: http", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "operator"); // -
+        assert_eq!(tokens[1].2.as_ref(), "keyword"); // name
+        assert_eq!(tokens[2].2.as_ref(), "punctuation.delimiter"); // :
+
+        // 9. Multi-line folded scalar: description: >
+        let tokens = highlighter.registry().tokenize_line_stateful(yaml_id, "description: >", &mut state);
+        assert_eq!(tokens[0].2.as_ref(), "keyword"); // description
+        assert_eq!(tokens[1].2.as_ref(), "punctuation.delimiter"); // :
+        assert_eq!(tokens[2].2.as_ref(), "operator"); // >
+    }
+
+    #[test]
     fn test_sample_files_tokenization() {
         let dummy_dir = PathBuf::from("/tmp/nonexistent_ie_test_dir_123");
         let highlighter = init_highlighter(&dummy_dir);
 
         let sample_files = [
+            ("samples/sources.list", "apt_sources"),
+            ("samples/fedora.repo", "apt_sources"),
+            ("samples/main.c", "c"),
+            ("samples/Program.cs", "c_sharp"),
+            ("samples/Caddyfile", "caddy"),
+            ("samples/server.cpp", "cpp"),
             ("samples/crontab", "crontab"),
+            ("samples/style.css", "css"),
+            ("samples/app.desktop", "desktop"),
+            ("samples/example.patch", "diff"),
+            ("samples/Dockerfile", "dockerfile"),
+            ("samples/.env", "env"),
+            ("samples/fstab", "fstab"),
+            ("samples/COMMIT_EDITMSG", "gitcommit"),
+            ("samples/.gitconfig", "gitconfig"),
+            ("samples/.gitignore", "gitignore"),
+            ("samples/git-rebase-todo", "gitrebase"),
+            ("samples/main.go", "go"),
+            ("samples/hosts", "hosts"),
+            ("samples/resolv.conf", "hosts"),
+            ("samples/index.html", "html"),
+            ("samples/config.ini", "ini"),
+            ("samples/Application.java", "java"),
+            ("samples/app.js", "javascript"),
+            ("samples/data.json", "json"),
+            ("samples/Main.kt", "kotlin"),
+            ("samples/script.lua", "lua"),
+            ("samples/Makefile", "makefile"),
+            ("samples/codeblocks.md", "markdown"),
+            ("samples/nginx.conf", "nginx"),
+            ("samples/script.py", "python"),
+            ("samples/main.rs", "rust"),
+            ("samples/deploy.sh", "shell"),
+            ("samples/query.sql", "sql"),
+            ("samples/ssh_config", "sshconfig"),
+            ("samples/sudoers", "sudoers"),
             ("samples/sudoers.tmp", "sudoers"),
             ("samples/override.conf", "systemd"),
-            ("samples/COMMIT_EDITMSG", "gitcommit"),
-            ("samples/sudoers", "sudoers"),
-            ("samples/git-rebase-todo", "gitrebase"),
+            ("samples/docker.service", "systemd"),
+            ("samples/config.toml", "toml"),
+            ("samples/app.ts", "typescript"),
+            ("samples/config.yaml", "yaml"),
         ];
 
         for (file_path, expected_lang) in sample_files {
@@ -1172,14 +1438,15 @@ mod tests {
             let detected = detect_language(path);
             assert_eq!(detected, Some(expected_lang), "Failed detecting language for {}", file_path);
 
-            if let Ok(content) = fs::read_to_string(path) {
-                let lang_id = highlighter.registry().lang_id(expected_lang)
-                    .unwrap_or_else(|| panic!("Language {} not in registry", expected_lang));
+            let content = fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("Failed to read sample file {}: {}", file_path, e));
 
-                let mut state = LexState::default();
-                for line in content.lines() {
-                    let _tokens = highlighter.registry().tokenize_line_stateful(lang_id, line, &mut state);
-                }
+            let lang_id = highlighter.registry().lang_id(expected_lang)
+                .unwrap_or_else(|| panic!("Language {} not in registry", expected_lang));
+
+            let mut state = LexState::default();
+            for line in content.lines() {
+                let _tokens = highlighter.registry().tokenize_line_stateful(lang_id, line, &mut state);
             }
         }
     }

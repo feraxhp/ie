@@ -1,7 +1,8 @@
 {
-  "keyword": "magenta",
+  "keyword": "blue",
   "keyword.directive": "magenta",
-  "property": "blue",
+  "keyword.directive.doctype": "magenta",
+  "property": "yellow",
   "string": "green",
   "constant.builtin": "yellow",
   "operator": "cyan",

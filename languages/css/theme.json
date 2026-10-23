@@ -6,7 +6,7 @@
   "function.call": "blue",
   "string": "green",
   "number": "yellow",
-  "variable": "white",
+  "variable": "black",
   "operator": "cyan",
   "punctuation.bracket": "darkgray",
   "punctuation.delimiter": "darkgray",

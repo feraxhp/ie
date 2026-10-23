@@ -7,7 +7,7 @@
   "keyword.return": "red",
   "shebang": "magenta",
   "function.builtin": "cyan",
-  "variable": "white",
+  "variable": "lightblue",
   "string": "green",
   "string.escape": "magenta",
   "number": "yellow",

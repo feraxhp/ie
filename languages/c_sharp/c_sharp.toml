@@ -6,7 +6,8 @@ extensions = ["cs"]
 include = ["comments"]
 rules = [
     # Preprocessor directives
-    { match = '^#\s*\w+.*', token = "keyword.directive" },
+    { match = '^[ 	]*#[ 	]*(?:if|else|elif|endif|define|undef|warning|error|line|region|endregion|nullable|pragma)\b', token = "keyword.directive" },
+    { match = '^[ 	]*#[ 	]*[a-zA-Z_]\w*', token = "keyword.directive" },
     # Verbatim strings
     { match = '@"', token = "string", push = "verbatim_string" },
     # Interpolated strings

@@ -22,7 +22,7 @@
   "boolean": "yellow",
   "constant": "yellow",
   "constant.builtin": "yellow",
-  "variable": "white",
+  "variable": "lightblue",
   "variable.builtin": "red",
   "attribute": "magenta",
   "operator": "cyan",

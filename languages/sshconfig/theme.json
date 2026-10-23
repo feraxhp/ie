@@ -10,7 +10,7 @@
   "boolean.true": "yellow",
   "boolean.false": "red",
   "variable.parameter": "red",
-  "variable": "white",
+  "variable": "lightblue",
   "operator": "cyan",
   "comment": "darkgray"
 }

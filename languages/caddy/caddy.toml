@@ -6,19 +6,50 @@ extensions = ["caddy", "caddyfile"]
 rules = [
     # Comments
     { match = '#.*', token = "comment" },
-    # Core directives
-    { match = '\b(?:reverse_proxy|file_server|root|encode|php_fastcgi|header|rewrite|redir|respond|try_files|import|tls|bind|handle|handle_path|handle_errors|route|basicauth|log|request_body)\b', token = "keyword" },
-    # Named matchers
-    { match = '@[a-zA-Z0-9_\-]+', token = "type" },
-    # Placeholders e.g. {http.request.uri} or {env.MY_VAR}
-    { match = '\{[a-zA-Z0-9_.>$]+\}', token = "variable" },
-    # Ports and schemes
-    { match = ':[0-9]+|https?://[^\s]+', token = "type" },
-    # Quoted strings
-    { match = '"(?:[^"\\]|\\.)*"', token = "string" },
+    # Quoted strings with escapes
+    { match = '"', token = "string", push = "string_double" },
+    { match = '`[^`]*`', token = "string" },
     { match = "'[^']*'", token = "string" },
-    # Numbers
-    { match = '\b\d+(?:s|ms|m|h|d)?\b', token = "number" },
-    # Brackets
+    # Placeholders / environment variables e.g. {http.request.uri} or {$MY_VAR}
+    { match = '\{[\$a-zA-Z0-9_.:\-/*>]+\}', token = "variable" },
+    # Named matchers definitions and usages (@api, @custom)
+    { match = '@[a-zA-Z0-9_\-]+', token = "type" },
+    # Common algorithms, formats, protocols & targets (stdout, stderr, gzip, file, net, etc.)
+    { match = '\b(?:gzip|zstd|br|json|console|single_field|filter|transform|ip_mask|discard|stdout|stderr|file|net|rolling)\b', token = "constant.builtin" },
+    # Standard matcher directives (used inside matcher blocks or as inline matchers)
+    { match = '\b(?:path|path_regexp|method|header|header_regexp|query|remote_ip|client_ip|host|vars|vars_regexp|expression|not|protocol)\b', token = "keyword" },
+    # Core HTTP & server directives
+    { match = '\b(?:reverse_proxy|file_server|root|encode|php_fastcgi|header|rewrite|redir|respond|try_files|import|tls|bind|handle|handle_path|handle_errors|route|basicauth|log|request_body|templates|push|abort|error|intercept|metrics|tracing|acme_server)\b', token = "keyword" },
+    # Common subdirectives & options
+    { match = '\b(?:output|format|level|include|exclude|to|lb_policy|lb_try_duration|health_uri|health_interval|health_timeout|transport|dial_timeout|keepalive|max_conns_per_host|roll_size|roll_keep|roll_keep_days|hide|browse|canonical_uris|index|precompressed|status|copy_response|copy_response_headers)\b', token = "keyword.modifier" },
+    # HTTP status codes (standalone 3-digit number)
+    { match = '\b[1-5][0-9]{2}\b', token = "constant.numeric" },
+    # Network addresses, ports and URLs
+    { match = 'https?://[^\s{}]+', token = "type" },
+    { match = '\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::[0-9]+)?\b', token = "type" },
+    { match = ':[0-9]+\b', token = "type" },
+    # Domain names with optional port (e.g. example.com, www.example.com, api.domain.org:443)
+    { match = '\b[a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?)+(?::[0-9]+)?\b', token = "type" },
+    # File paths & wildcard patterns (/var/log/..., /api/*, *.html)
+    { match = '(?:/[a-zA-Z0-9_\-.*]+)+/?', token = "string" },
+    { match = '\b\d+(?:s|ms|m|h|d|k|K|m|M|g|G)?\b', token = "number" },
+    # Matcher tokens and operators
+    { match = '[-+*/%&|^~=<>!?:]', token = "operator" },
+    { match = '\*', token = "operator" },
+    # Brackets and delimiters
     { match = '[{}]', token = "punctuation.bracket" },
+    { match = '[,;]', token = "punctuation.delimiter" },
+]
+
+[states.string_double]
+pop_on_newline = true
+default_token = "string"
+rules = [
+    # Placeholders inside double-quoted strings (e.g. "{http.error.status_code}")
+    { match = '\{[\$a-zA-Z0-9_.:\-/*>]+\}', token = "variable" },
+    # Escapes
+    { match = '\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})', token = "string.escape" },
+    { match = '\\.', token = "string.escape" },
+    # Closing quote
+    { match = '"', token = "string", pop = true },
 ]

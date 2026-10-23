@@ -16,7 +16,7 @@
   "constant.builtin": "yellow",
   "number": "yellow",
   "number.float": "yellow",
-  "variable": "white",
+  "variable": "lightblue",
   "operator": "cyan",
   "punctuation.bracket": "darkgray",
   "punctuation.delimiter": "darkgray",

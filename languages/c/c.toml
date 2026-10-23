@@ -6,7 +6,12 @@ extensions = ["c", "h"]
 include = ["comments"]
 rules = [
     # Preprocessor directives
-    { match = '^#\s*\w+.*', token = "keyword.directive" },
+    { match = '^[ \t]*#[ \t]*include\b', token = "keyword.directive", push = "include" },
+    { match = '^[ \t]*#[ \t]*(?:define|undef|if|ifdef|ifndef|elif|else|endif|line|error|warning|pragma)\b', token = "keyword.directive" },
+    { match = '^[ \t]*#[ \t]*[a-zA-Z_]\w*', token = "keyword.directive" },
+    { match = '^[ \t]*#', token = "keyword.directive" },
+    { match = '\bdefined\b', token = "keyword.directive" },
+    { match = '\b(?:__attribute__|__declspec)\b', token = "keyword.modifier" },
     # Character literals
     { match = '\x27(?:\\(?:[nrt0\\"\x27]|x[0-9a-fA-F]{2})|[^\x27\\\n])\x27', token = "character" },
     # String literals
@@ -46,6 +51,15 @@ rules = [
     { match = '[(){}\[\]]', token = "punctuation.bracket" },
     # Delimiters
     { match = '[,;.]', token = "punctuation.delimiter" },
+]
+
+[states.include]
+pop_on_newline = true
+include = ["comments"]
+rules = [
+    { match = '<[^>\n]+>', token = "string" },
+    { match = '"[^"\n]+"', token = "string" },
+    { match = '[a-zA-Z_]\w*', token = "constant" },
 ]
 
 [states.string]

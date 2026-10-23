@@ -21,7 +21,7 @@
   "boolean": "yellow",
   "constant": "yellow",
   "constant.builtin": "yellow",
-  "variable": "white",
+  "variable": "lightblue",
   "operator": "cyan",
   "punctuation.bracket": "darkgray",
   "punctuation.delimiter": "darkgray",

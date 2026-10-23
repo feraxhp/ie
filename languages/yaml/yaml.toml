@@ -21,19 +21,25 @@ rules = [
     { match = '\b(?:true|false|yes|no|on|off)\b', token = "boolean" },
     # Null values
     { match = '\b(?:null|~)\b', token = "constant.builtin" },
-    # Built-in types
-    { match = '\b(?:str|int|float|bool|map|seq)\b', token = "type" },
-    # Numbers
+    # Merge keys (<<)
+    { match = '<<', token = "operator" },
+    # Mapping keys followed by colon (supports namespaced keys like app.kubernetes.io/name)
+    { match = '[a-zA-Z0-9_\-./]+', lookahead = '\s*:', token = "keyword" },
+    # Numbers with units / percentages / hex / oct / float / int
     { match = '\b0[xX][0-9a-fA-F_]+\b', token = "number" },
     { match = '\b0[oO][0-7_]+\b', token = "number" },
+    { match = '\b\d+(?:%|[a-zA-Z]+)?\b', token = "number" },
     { match = '-?\b\d[\d_]*\.\d[\d_]*(?:[eE][+-]?\d+)?\b', token = "number.float" },
     { match = '-?\b\d[\d_]*(?:[eE][+-]?\d+)\b', token = "number.float" },
     { match = '-?\b\d[\d_]*\b', token = "number" },
-    # Keys (mapping key followed by colon)
-    { match = '[a-zA-Z0-9_\-]+', lookahead = '\s*:', token = "keyword" },
-    # Operators and structural indicators
+    # Operators and structural indicators (| and > block scalars)
     { match = '[|>][+-]?', token = "operator" },
-    { match = '[:\-?]', token = "operator" },
+    # Key-value colon delimiter
+    { match = ':', token = "punctuation.delimiter" },
+    # Bullet list marker
+    { match = '^[ \t]*-[ \t]', token = "operator" },
+    # Other operators
+    { match = '[-+*/%&|^~=<>!?]', token = "operator" },
     # Brackets
     { match = '[\[\]{}]', token = "punctuation.bracket" },
     # Delimiters

@@ -5,7 +5,7 @@
   "string": "green",
   "boolean": "yellow",
   "number": "yellow",
-  "variable": "white",
+  "variable": "lightblue",
   "operator": "cyan",
   "comment": "darkgray"
 }

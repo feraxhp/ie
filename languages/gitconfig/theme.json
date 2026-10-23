@@ -3,7 +3,7 @@
   "type": "yellow",
   "string": "green",
   "number": "yellow",
-  "variable": "white",
+  "variable": "lightblue",
   "operator": "cyan",
   "punctuation.bracket": "darkgray",
   "punctuation.delimiter": "darkgray",

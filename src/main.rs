@@ -44,6 +44,23 @@ use crate::search::{SearchFocus, SearchState};
 use crate::system::{Directories, File};
 
 fn main() -> Result<(), mynox::Report> {
+    // Install panic hook to ensure terminal is restored if an unexpected panic occurs
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let _ = execute!(
+            std::io::stdout(),
+            PopKeyboardEnhancementFlags,
+            crossterm::style::Print("\x1b[=0u"),
+            LeaveAlternateScreen,
+            PopKeyboardEnhancementFlags,
+            crossterm::style::Print("\x1b[=0u"),
+            crossterm::cursor::Show
+        );
+        let _ = disable_raw_mode();
+        let _ = std::io::stdout().flush();
+        original_hook(panic_info);
+    }));
+
     match run() {
         Ok(0) => Ok(()),
         Ok(code) => std::process::exit(code),
@@ -196,57 +213,90 @@ fn run() -> Result<i32, mynox::Error> {
         )
     })?;
 
-    // Enable progressive keyboard enhancement protocol if supported to disambiguate modified keys
-    let _ = execute!(
-        stdout(),
-        PushKeyboardEnhancementFlags(
-            KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
-        )
-    );
-
+    // In FULL mode: Enter alternate screen FIRST before pushing keyboard enhancement flags
+    // so flags apply to the alternate screen buffer instead of leaking to the main shell screen.
     if matches!(options.mode, TUImode::FULL) {
         let mut out = stdout();
-        execute!(out, EnterAlternateScreen).map_err(|e| {
-            mynox::error!(
+        if let Err(e) = execute!(out, EnterAlternateScreen) {
+            let _ = disable_raw_mode();
+            return Err(mynox::error!(
                 "tui::screen",
                 "Terminal initialization error",
                 format!("Failed to enter **alternate screen**: {}", e)
-            )
-        })?;
+            ));
+        }
     }
+
+    // Enable progressive keyboard enhancement protocol if supported to disambiguate modified keys.
+    // Executed AFTER entering alternate screen in FULL mode (strict LIFO order).
+    let _ = execute!(
+        stdout(),
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    );
 
     let backend = CrosstermBackend::new(stdout());
     let mut terminal = match options.mode {
-        TUImode::INLINE(lines) => Terminal::with_options(
+        TUImode::INLINE(lines) => match Terminal::with_options(
             backend,
             TerminalOptions {
                 viewport: Viewport::Inline(lines),
             },
-        )
-        .map_err(|e| {
-            mynox::error!(
-                "tui::terminal",
-                "Terminal initialization error",
-                format!("Failed to initialize inline viewport with `{}` lines: {}", lines, e)
-            )
-        })?,
-        TUImode::FULL => Terminal::new(backend).map_err(|e| {
-            mynox::error!(
-                "tui::terminal",
-                "Terminal initialization error",
-                format!("Failed to initialize fullscreen terminal: {}", e)
-            )
-        })?,
+        ) {
+            Ok(t) => t,
+            Err(e) => {
+                let _ = execute!(stdout(), PopKeyboardEnhancementFlags, crossterm::style::Print("\x1b[=0u"));
+                let _ = disable_raw_mode();
+                return Err(mynox::error!(
+                    "tui::terminal",
+                    "Terminal initialization error",
+                    format!("Failed to initialize inline viewport with `{}` lines: {}", lines, e)
+                ));
+            }
+        },
+        TUImode::FULL => match Terminal::new(backend) {
+            Ok(t) => t,
+            Err(e) => {
+                let _ = execute!(
+                    stdout(),
+                    PopKeyboardEnhancementFlags,
+                    crossterm::style::Print("\x1b[=0u"),
+                    LeaveAlternateScreen,
+                    PopKeyboardEnhancementFlags,
+                    crossterm::style::Print("\x1b[=0u")
+                );
+                let _ = disable_raw_mode();
+                return Err(mynox::error!(
+                    "tui::terminal",
+                    "Terminal initialization error",
+                    format!("Failed to initialize fullscreen terminal: {}", e)
+                ));
+            }
+        },
     };
 
-    terminal.clear().map_err(|e| {
-        mynox::error!(
+    if let Err(e) = terminal.clear() {
+        let _ = execute!(
+            terminal.backend_mut(),
+            PopKeyboardEnhancementFlags,
+            crossterm::style::Print("\x1b[=0u")
+        );
+        if matches!(options.mode, TUImode::FULL) {
+            let _ = execute!(
+                terminal.backend_mut(),
+                LeaveAlternateScreen,
+                PopKeyboardEnhancementFlags,
+                crossterm::style::Print("\x1b[=0u")
+            );
+        }
+        let _ = disable_raw_mode();
+        let _ = terminal.show_cursor();
+        let _ = terminal.backend_mut().flush();
+        return Err(mynox::error!(
             "tui::terminal",
             "Terminal initialization error",
             format!("Failed to clear terminal: {}", e)
-        )
-    })?;
+        ));
+    }
 
     let res = run_event_loop(
         &mut terminal,
@@ -263,10 +313,12 @@ fn run() -> Result<i32, mynox::Error> {
         &mut first_line_row,
     );
 
-    // 8. Clean exit and complete terminal restoration
-    let _ = execute!(stdout(), PopKeyboardEnhancementFlags);
+    // 8. Clean exit and complete terminal restoration (strict LIFO order)
+    // 8.1. Pop keyboard enhancement flags on the currently active screen buffer
+    let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
+    let _ = execute!(terminal.backend_mut(), crossterm::style::Print("\x1b[=0u"));
 
-    // For inline mode: move cursor to the first line of the editor and clear everything below it
+    // 8.2. Restore screen buffer
     if matches!(options.mode, TUImode::INLINE(_)) {
         if let Some(row) = first_line_row {
             let _ = execute!(
@@ -279,11 +331,16 @@ fn run() -> Result<i32, mynox::Error> {
         }
     } else {
         let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+        // After returning to the main screen, also ensure no keyboard flags remain on the main screen
+        let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
+        let _ = execute!(terminal.backend_mut(), crossterm::style::Print("\x1b[=0u"));
     }
 
+    // 8.3. Disable raw mode and restore cursor
     let _ = disable_raw_mode();
     let _ = terminal.show_cursor();
     let _ = terminal.backend_mut().flush();
+    let _ = stdout().flush();
     eprint!("\r");
 
     res
