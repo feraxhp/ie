@@ -1,9 +1,10 @@
+mod cache;
 mod command;
 mod highlight;
 mod permissions;
+mod prompt;
 mod system;
 
-use std::fs;
 use std::io::{stdout, Write};
 use std::path::PathBuf;
 
@@ -22,12 +23,14 @@ use texera::{
     apply_action, DefaultKeymap, EditorAction, EditorView, EditorViewState, HistoryPlugin, Keymap,
     LineNumberPlugin, HighlightPlugin, UnsavedLinePlugin,
 };
-use texera_core::{AllowMultipleSelections, State, TransactionSpec};
+use texera_core::{AllowMultipleSelections, ChangeSpec, State, Text, TransactionSpec};
 
+use crate::cache::Cache;
 use crate::command::{get_options, TUImode};
 use crate::highlight::{detect_language, init_highlighter};
-use crate::permissions::save_file;
-use crate::system::Directories;
+use crate::permissions::{check_write_permission, save_file};
+use crate::prompt::prompt_restore;
+use crate::system::{Directories, File};
 
 fn main() -> Result<(), mynox::Report> {
     if let Err(err) = run() {
@@ -57,30 +60,39 @@ fn run() -> Result<(), mynox::Error> {
         highlight.set_active_language(lang);
     }
 
-    // 3. Read existing file or initialize with empty content
+    // 3. Read existing file or initialize with empty content using grp-style File reader
     let (content, file_existed) = if file_path.exists() {
-        let text = fs::read_to_string(&file_path).map_err(|e| {
-            mynox::error!(
-                "fs::read",
-                "Failed to read file",
-                format!("Could not read `{}`: {}", file_path.display(), e)
-                =>
-                "Ensure the file exists and you have **read permissions**"
-            )
-        })?;
+        let text = File::read(&file_path)?;
         (text, true)
     } else {
         (String::new(), false)
     };
 
-    // 4. Configure Texera immutable transactional State with history, syntax cache, and multi-selection
+    // 4. Check if an unsaved edit was previously cached and write permissions are now available
+    let has_cache = Cache::exists(&file_path);
+    let has_write_perm = check_write_permission(&file_path).is_ok();
+
+    let mut restored_content: Option<String> = None;
+    if has_cache && has_write_perm {
+        match prompt_restore()? {
+            true => {
+                let cached_text = Cache::read(&file_path)?;
+                restored_content = Some(cached_text);
+            }
+            false => {
+                let _ = Cache::remove(&file_path);
+            }
+        }
+    }
+
+    // 5. Configure Texera immutable transactional State with history, syntax cache, and multi-selection
     let mut state = State::from(content.as_str()).with_extensions([
         HistoryPlugin::extension(None),
         HighlightPlugin::syntax_extension(),
         AllowMultipleSelections(true).into(),
     ]);
 
-    // 5. Configure editor plugins
+    // 6. Configure editor plugins
     let mut unsaved_lines = UnsavedLinePlugin::new();
     if file_existed {
         unsaved_lines.mark_as_saved(&state);
@@ -90,12 +102,36 @@ fn run() -> Result<(), mynox::Error> {
         unsaved_lines.check_dirty_lines(&state);
     }
 
+    // If restoring cached content, apply the cached edits over the original baseline buffer
+    // so Myers diff properly activates dirty line markers
+    if let Some(cached_text) = restored_content {
+        let spec = TransactionSpec::default().with_change(
+            ChangeSpec::new(
+                0,
+                Some(state.doc().len_chars()),
+                Some(Text::from(cached_text.as_str())),
+            )
+            .map_err(|e| {
+                mynox::error!(
+                    "editor::restore",
+                    "Failed to restore cached content",
+                    format!("Could not apply cached text: {}", e)
+                )
+            })?,
+        );
+
+        if let Ok(result) = state.clone().update(spec) {
+            state = result.into_state();
+        }
+        unsaved_lines.check_dirty_lines(&state);
+    }
+
     let keymap = DefaultKeymap::new();
     let mut view_state = EditorViewState::new();
     let mut permission_error: Option<String> = None;
     let mut first_line_row: Option<u16> = None;
 
-    // 6. Initialize terminal according to selected mode (inline vs fullscreen)
+    // 7. Initialize terminal according to selected mode (inline vs fullscreen)
     enable_raw_mode().map_err(|e| {
         mynox::error!(
             "tui::raw_mode",
@@ -159,7 +195,7 @@ fn run() -> Result<(), mynox::Error> {
         &mut first_line_row,
     );
 
-    // 7. Clean exit and complete terminal restoration
+    // 8. Clean exit and complete terminal restoration
     // For inline mode: move cursor to the first line of the editor and clear everything below it
     if matches!(options.mode, TUImode::INLINE(_)) {
         if let Some(row) = first_line_row {
@@ -315,8 +351,14 @@ fn run_event_loop<B: ratatui::backend::Backend>(
                         Ok(()) => {
                             unsaved_lines.mark_as_saved(state);
                             *permission_error = None;
+                            let _ = Cache::remove(file_path);
                         }
                         Err(err) => {
+                            // If saving failed due to permission denial, persist unsaved content to temp cache
+                            if err.is_category("fs::permission_denied") {
+                                let _ = Cache::save(file_path, &current_text);
+                            }
+
                             // Display clean explanation without crashing or panicking
                             let description = if err.is_category("fs::permission_denied") {
                                 format!(
@@ -414,5 +456,29 @@ mod tests {
         let handled_second = collapse_selections_or_exit(&mut state);
         assert!(!handled_second);
         assert_eq!(state.selection().count(), 1);
+    }
+
+    #[test]
+    fn test_restore_cached_content_activates_dirty_lines() {
+        let original = "line 1\nline 2\nline 3\n";
+        let cached = "line 1\nline 2 edited\nline 3\nline 4 added\n";
+
+        let mut state = State::from(original).with_extensions([
+            AllowMultipleSelections(true).into(),
+        ]);
+        let mut unsaved_lines = UnsavedLinePlugin::new();
+        unsaved_lines.mark_as_saved(&state);
+        assert!(!unsaved_lines.is_dirty());
+
+        let spec = TransactionSpec::default().with_change(
+            ChangeSpec::new(0, Some(state.doc().len_chars()), Some(Text::from(cached))).unwrap(),
+        );
+        let update_res = state.clone().update(spec).unwrap();
+        state = update_res.into_state();
+
+        unsaved_lines.check_dirty_lines(&state);
+        assert!(unsaved_lines.is_dirty());
+        assert!(unsaved_lines.is_line_dirty(2));
+        assert!(unsaved_lines.is_line_dirty(4));
     }
 }
