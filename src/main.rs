@@ -29,7 +29,7 @@ use texera::{
     apply_action, EditorAction, EditorView, EditorViewState, Gutter, HighlightPlugin,
     HistoryPlugin, LineNumberPlugin, UnsavedLinePlugin,
 };
-use texera_core::{AllowMultipleSelections, ChangeSpec, State, Text, TransactionSpec};
+use texera_core::{AllowMultipleSelections, ChangeSpec, Selection, State, Text, TransactionSpec};
 
 use crate::cache::Cache;
 use crate::command::{get_options, TUImode};
@@ -137,11 +137,50 @@ fn run() -> Result<(), mynox::Error> {
         unsaved_lines.check_dirty_lines(&state);
     }
 
+    // Jump to specified line/column if provided via CLI
+    let mut initial_visual_line: Option<usize> = None;
+    if options.line.is_some() || options.column.is_some() {
+        let doc = state.doc();
+        let num_lines = doc.len_lines();
+        if num_lines > 0 {
+            let target_line_idx = options
+                .line
+                .map(|l| l.max(1).saturating_sub(1).min(num_lines - 1))
+                .unwrap_or(0);
+
+            initial_visual_line = Some(target_line_idx);
+
+            if let Ok(line) = doc.line(target_line_idx) {
+                let line_text = line.text().to_string();
+                let line_len_chars = line_text.trim_end_matches(['\r', '\n']).chars().count();
+                let col_offset = options.column.map(|c| c.max(1).saturating_sub(1)).unwrap_or(0);
+                let actual_col = col_offset.min(line_len_chars);
+                let char_pos = line.from() + actual_col;
+
+                let sel = Selection::cursor(char_pos);
+                let spec = TransactionSpec::default().with_selection(sel);
+                if let Ok(result) = state.clone().update(spec) {
+                    state = result.into_state();
+                }
+            }
+        }
+    }
+
     // Load active keymap (from keymap.json in config dir or defaults)
     let keymap = IeKeymap::load_or_default()?;
     let mut search_state = SearchState::new();
 
     let mut view_state = EditorViewState::new();
+    if let Some(target_line_idx) = initial_visual_line {
+        let viewport_height: usize = match options.mode {
+            TUImode::INLINE(lines) => lines as usize,
+            TUImode::FULL => {
+                crossterm::terminal::size().map(|(_, h)| h as usize).unwrap_or(24)
+            }
+        };
+        let scroll_y = target_line_idx.saturating_sub(viewport_height / 2);
+        view_state.set_scroll(0, scroll_y);
+    }
     let mut permission_error: Option<String> = None;
     let mut first_line_row: Option<u16> = None;
 
@@ -758,5 +797,36 @@ mod tests {
         assert!(unsaved_lines.is_dirty());
         assert!(unsaved_lines.is_line_dirty(2));
         assert!(unsaved_lines.is_line_dirty(4));
+    }
+
+    #[test]
+    fn test_jump_to_line_and_column() {
+        let content = "line 1\nline 2 with more text\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n";
+        let mut state = State::from(content);
+        let doc = state.doc();
+        let num_lines = doc.len_lines();
+        assert_eq!(num_lines, 11);
+
+        // Jump to line 2, col 8
+        let target_line_idx = 2usize.saturating_sub(1); // line 2 -> index 1
+        let line = doc.line(target_line_idx).unwrap();
+        let col_offset = 8usize.saturating_sub(1); // col 8 -> offset 7
+        let char_pos = line.from() + col_offset;
+
+        let sel = Selection::cursor(char_pos);
+        state = state.clone().update(TransactionSpec::default().with_selection(sel)).unwrap().into_state();
+
+        assert_eq!(state.selection().main().head(), char_pos);
+        assert_eq!(state.doc().line_at(state.selection().main().head()).unwrap().number(), 1);
+
+        // Test viewport centering calculation
+        let viewport_height = 8usize;
+        let scroll_y = target_line_idx.saturating_sub(viewport_height / 2);
+        assert_eq!(scroll_y, 0);
+
+        // Jump to line 8 (index 7)
+        let target_line_idx = 7usize;
+        let scroll_y = target_line_idx.saturating_sub(viewport_height / 2);
+        assert_eq!(scroll_y, 3); // 7 - 4 = 3
     }
 }

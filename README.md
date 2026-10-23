@@ -19,6 +19,32 @@ Really handy to use as a git inline editor for cherry-pick, amends, merge messag
 cargo install ie
 ```
 
+## CLI Usage
+
+```bash
+# Open file in inline mode (default 8 lines)
+ie config.toml
+
+# Jump directly to line (e.g. from compiler, linter or systemctl error)
+ie config.toml:45
+ie +45 config.toml
+ie config.toml +45
+
+# Jump directly to line and column
+ie config.toml:45:10
+ie +45:10 config.toml
+ie config.toml +45:10
+
+# Open in fullscreen mode
+ie --full config.toml:45
+
+# Specify number of lines in inline mode
+ie -l 15 +45 config.toml
+
+# Override syntax highlighting language
+ie -f toml config.custom
+```
+
 ## Default Keybindings
 
 ### Navigation & Cursor
