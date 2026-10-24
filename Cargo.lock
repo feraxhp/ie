@@ -1623,6 +1623,8 @@ dependencies = [
 [[package]]
 name = "texera"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0eb815eab9c40dd47fc4c44d97ed6c9d896d639cdf60c44241f538ec6e37eba4"
 dependencies = [
  "crossterm",
  "mynox",
@@ -1656,6 +1658,8 @@ dependencies = [
 [[package]]
 name = "texera-macros"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b109683477ce35aaa7610a471d9454ad810b2ae73a916f5c6da9b2593674181"
 
 [[package]]
 name = "texera-pluggins"
