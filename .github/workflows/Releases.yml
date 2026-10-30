@@ -1,0 +1,71 @@
+on:
+  workflow_dispatch:
+    inputs:
+      linux:
+        description: "Run Linux build?"
+        required: true
+        type: boolean
+        default: true
+      # windows:
+      #     description: "Run Windows build?"
+      #     required: true
+      #     type: boolean
+      #     default: true
+  release:
+    types:
+      - created # Triggers when a new release is published via GitHub UI or API
+  push:
+    tags:
+      - 'v*' # Triggers when a tag starting with 'v' is pushed (e.g., v1.0.0, v0.5.1-beta)
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    permissions:
+      contents: write 
+    
+    name: 🚀 Manage GitHub Release
+    uses: ./.github/workflows/release.yml
+    with:
+      # For workflow_dispatch, the 'tag' input is no longer present,
+      # but github.ref_name will likely be empty or irrelevant, which is fine
+      # because the 'release' job will skip creation anyway for workflow_dispatch.
+      # For 'push' or 'release' events, github.ref_name is the tag name.
+      tag: ${{ github.ref_name }} 
+      event: ${{ github.event_name }} # Pass the actual event name for conditional logic in the reusable workflow
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.linux || github.event_name != 'workflow_dispatch' }}
+    needs: release
+    name: Build linux binaries
+    uses: feraxhp/ship-rs/.github/workflows/linux.yml@v0.2.0
+    permissions:
+      contents: write
+    with:
+      binary: ie
+      # deps_x86_64: libssl-dev
+      # deps_aarch64: libssl-dev:arm64
+      # deps_armv7: libssl-dev:armhf
+
+#   build-windows:
+#     needs: release
+#     permissions:
+#       contents: write
+#     name: 💻 Windows Build
+#     if: ${{ github.event_name == 'workflow_dispatch' && inputs.windows || github.event_name != 'workflow_dispatch' }}
+#     uses: ./.github/workflows/windows.yml
+#     
+#   publish-winget:
+#     # This job depends on 'build-windows' completing successfully.
+#     needs: build-windows
+#     permissions:
+#       contents: read 
+#     name: 🔥 Publish on Winget
+#     if: ${{ github.event_name == 'workflow_dispatch' && inputs.windows || github.event_name != 'workflow_dispatch' }}
+#     uses: ./.github/workflows/winget.yml
+#     secrets:
+#       TOKEN: ${{ secrets.TOKEN }}
