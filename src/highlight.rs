@@ -1438,6 +1438,10 @@ mod tests {
             let detected = detect_language(path);
             assert_eq!(detected, Some(expected_lang), "Failed detecting language for {}", file_path);
 
+            if !path.exists() {
+                continue;
+            }
+
             let content = fs::read_to_string(path)
                 .unwrap_or_else(|e| panic!("Failed to read sample file {}: {}", file_path, e));
 

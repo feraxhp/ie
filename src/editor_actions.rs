@@ -446,6 +446,17 @@ pub fn toggle_comments(state: &mut State, lang: Option<&str>) -> Result<bool, Er
     Ok(true)
 }
 
+/// Inserts a literal hard tab (`\t`) replacing current selection(s).
+pub fn insert_hard_tab(state: &mut State) -> Result<bool, Error> {
+    let spec = state.replace_selection("\t");
+    let res = state.clone().update(spec).map_err(|e| {
+        mynox::error!("editor::hard_tab", "Update error", format!("{}", e))
+    })?;
+
+    *state = res.into_state();
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -543,5 +554,16 @@ mod tests {
         // Cursor must be on the newly added line (line 1, offset 11)
         assert_eq!(state.selection().main().head(), 11);
         assert_eq!(state.doc().line_at(state.selection().main().head()).unwrap().number(), 1);
+    }
+
+    #[test]
+    fn insert_hard_tab_replaces_selection_or_cursor() {
+        let mut state = State::from("hello world");
+        let sel = Selection::cursor(5);
+        state = state.clone().update(TransactionSpec::default().with_selection(sel)).unwrap().into_state();
+
+        let res = insert_hard_tab(&mut state);
+        assert!(res.is_ok());
+        assert_eq!(state.doc().to_string(), "hello\t world");
     }
 }

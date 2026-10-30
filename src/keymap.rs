@@ -41,6 +41,7 @@ pub enum IeAction {
     AddLineBelow,
     AddLineAbove,
     ToggleComments,
+    InsertHardTab,
 
     // Core Texera editing/navigation actions
     Texera(EditorAction),
@@ -77,6 +78,7 @@ impl FromStr for IeAction {
             "add-line-below" => Ok(IeAction::AddLineBelow),
             "add-line-above" => Ok(IeAction::AddLineAbove),
             "toggle-comments" | "toggle-coments" => Ok(IeAction::ToggleComments),
+            "insert-hard-tab" | "hard-tab" | "hardtab" => Ok(IeAction::InsertHardTab),
 
             // Texera actions
             "undo" => Ok(IeAction::Texera(EditorAction::Undo)),
@@ -287,6 +289,9 @@ impl IeKeymap {
         map.insert(KeyCombo::new(KeyCode::Delete, KeyModifiers::empty()), IeAction::Texera(EditorAction::DeleteForward));
         map.insert(KeyCombo::new(KeyCode::Enter, KeyModifiers::empty()), IeAction::Texera(EditorAction::InsertNewline));
         map.insert(KeyCombo::new(KeyCode::Tab, KeyModifiers::empty()), IeAction::Texera(EditorAction::InsertTab));
+        map.insert(KeyCombo::new(KeyCode::BackTab, KeyModifiers::empty()), IeAction::InsertHardTab);
+        map.insert(KeyCombo::new(KeyCode::BackTab, KeyModifiers::SHIFT), IeAction::InsertHardTab);
+        map.insert(KeyCombo::new(KeyCode::Tab, KeyModifiers::SHIFT), IeAction::InsertHardTab);
 
         // Navigation
         map.insert(KeyCombo::new(KeyCode::Left, KeyModifiers::empty()), IeAction::Texera(EditorAction::MoveLeft));
@@ -364,6 +369,27 @@ impl IeKeymap {
         let combo = KeyCombo::from_event(event);
         if let Some(action) = self.bindings.get(&combo).copied() {
             return Some(action);
+        }
+
+        // Normalize BackTab <-> Shift-Tab if one is mapped
+        if combo.code == KeyCode::BackTab {
+            let alt_combo = KeyCombo::new(KeyCode::Tab, KeyModifiers::SHIFT);
+            if let Some(action) = self.bindings.get(&alt_combo).copied() {
+                return Some(action);
+            }
+            let alt_no_shift = KeyCombo::new(KeyCode::BackTab, KeyModifiers::empty());
+            if let Some(action) = self.bindings.get(&alt_no_shift).copied() {
+                return Some(action);
+            }
+        } else if combo.code == KeyCode::Tab && combo.modifiers.contains(KeyModifiers::SHIFT) {
+            let alt_combo = KeyCombo::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+            if let Some(action) = self.bindings.get(&alt_combo).copied() {
+                return Some(action);
+            }
+            let alt_empty = KeyCombo::new(KeyCode::BackTab, KeyModifiers::empty());
+            if let Some(action) = self.bindings.get(&alt_empty).copied() {
+                return Some(action);
+            }
         }
 
         // Fallback for regular character insertion when typing text without modifiers (or simple Shift for capital letters)
@@ -565,5 +591,19 @@ mod tests {
         assert_eq!(keymap.bindings.get(&ctrl_s), Some(&IeAction::SaveFile));
         let f2_combo = KeyCombo::new(KeyCode::F(2), KeyModifiers::empty());
         assert_eq!(keymap.bindings.get(&f2_combo), None);
+    }
+
+    #[test]
+    fn shift_tab_triggers_insert_hard_tab() {
+        let keymap = IeKeymap::default();
+
+        let shift_tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT);
+        assert_eq!(keymap.action_for_key(&shift_tab), Some(IeAction::InsertHardTab));
+
+        let backtab_shift = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+        assert_eq!(keymap.action_for_key(&backtab_shift), Some(IeAction::InsertHardTab));
+
+        let backtab_plain = KeyEvent::new(KeyCode::BackTab, KeyModifiers::empty());
+        assert_eq!(keymap.action_for_key(&backtab_plain), Some(IeAction::InsertHardTab));
     }
 }

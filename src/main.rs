@@ -1,5 +1,6 @@
 mod cache;
 mod command;
+mod config;
 mod editor_actions;
 mod highlight;
 mod keymap;
@@ -27,14 +28,15 @@ use ratatui::widgets::Paragraph;
 use ratatui::{Terminal, TerminalOptions, Viewport};
 use texera::{
     apply_action, EditorAction, EditorView, EditorViewState, Gutter, HighlightPlugin,
-    HistoryPlugin, LineNumberPlugin, UnsavedLinePlugin,
+    HistoryPlugin, LineNumberPlugin, UnsavedLinePlugin, WhitespacePlugin,
 };
 use texera_core::{AllowMultipleSelections, ChangeSpec, Selection, State, Text, TransactionSpec};
 
 use crate::cache::Cache;
 use crate::command::{get_options, TUImode};
+use crate::config::Config;
 use crate::editor_actions::{
-    add_line, clone_lines, delete_lines, move_selection_lines, toggle_comments,
+    add_line, clone_lines, delete_lines, insert_hard_tab, move_selection_lines, toggle_comments,
 };
 use crate::highlight::{detect_language, init_highlighter};
 use crate::keymap::{IeAction, IeKeymap};
@@ -190,6 +192,10 @@ fn run() -> Result<i32, mynox::Error> {
     let keymap = IeKeymap::load_or_default()?;
     let mut search_state = SearchState::new();
 
+    // Load editor configuration (whitespace glyphs, etc.)
+    let config = Config::load_or_default();
+    let whitespace_plugin = config.whitespace_plugin();
+
     let mut view_state = EditorViewState::new();
     if let Some(target_line_idx) = initial_visual_line {
         let viewport_height: usize = match options.mode {
@@ -307,6 +313,7 @@ fn run() -> Result<i32, mynox::Error> {
         &mut search_state,
         &mut view_state,
         &highlight,
+        &whitespace_plugin,
         &file_path,
         active_lang.as_deref(),
         options.backup,
@@ -362,6 +369,7 @@ fn run_event_loop(
     search_state: &mut SearchState,
     view_state: &mut EditorViewState,
     highlight: &HighlightPlugin,
+    whitespace: &WhitespacePlugin,
     file_path: &PathBuf,
     active_lang: Option<&str>,
     backup: bool,
@@ -419,6 +427,7 @@ fn run_event_loop(
                 let mut view = EditorView::new()
                     .with_style(Style::default())
                     .with_wrap(wrap_enabled)
+                    .with_glyph_transformer(whitespace.clone())
                     .with_highlighter(highlight.clone());
 
                 let gutter_width = if show_gutter {
@@ -863,6 +872,15 @@ fn run_event_loop(
                         }
                         IeAction::ToggleComments => {
                             if toggle_comments(state, active_lang)? {
+                                unsaved_lines.check_dirty_lines(state);
+                                if search_state.is_active {
+                                    search_state.recompute_matches(state);
+                                }
+                            }
+                            continue;
+                        }
+                        IeAction::InsertHardTab => {
+                            if insert_hard_tab(state)? {
                                 unsaved_lines.check_dirty_lines(state);
                                 if search_state.is_active {
                                     search_state.recompute_matches(state);

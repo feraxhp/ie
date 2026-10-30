@@ -1622,9 +1622,9 @@ dependencies = [
 
 [[package]]
 name = "texera"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0eb815eab9c40dd47fc4c44d97ed6c9d896d639cdf60c44241f538ec6e37eba4"
+checksum = "34e52f28a476997c3c6df83f47fe07e057eff8e4ef6594d0ca61ba179a9c6a63"
 dependencies = [
  "crossterm",
  "mynox",

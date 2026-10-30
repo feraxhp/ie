@@ -97,6 +97,7 @@ ie --backup config.toml
 | <kbd>Delete</kbd> | `delete-forward` | Delete character at cursor |
 | <kbd>Enter</kbd> | `insert-newline` | Insert a newline |
 | <kbd>Tab</kbd> | `insert-tab` | Insert a tab indentation |
+| <kbd>Shift</kbd> + <kbd>Tab</kbd> | `insert-hard-tab` | Insert a literal hard tab (`\t`) character |
 | <kbd>Shift</kbd> + <kbd>Enter</kbd> | `add-line-below` | Add an empty line below current line |
 | <kbd>Ctrl</kbd> + <kbd>Enter</kbd> | `add-line-above` | Add an empty line above current line |
 | <kbd>Shift</kbd> + <kbd>Delete</kbd> / <kbd>Shift</kbd> + <kbd>Backspace</kbd> | `delete-line` | Delete current line |
@@ -210,6 +211,7 @@ Keys are written as hyphen-separated values: `[modifier-][modifier-]key`
 | `select-all` | - | Select entire document |
 | `insert-newline` | `newline`, `enter` | Insert newline |
 | `insert-tab` | `tab` | Insert tab |
+| `insert-hard-tab` | `hard-tab`, `hardtab` | Insert literal hard tab (`\t`) |
 | `delete-backward` | `backspace` | Delete previous character |
 | `delete-forward` | `delete` | Delete next character |
 | `move-left` / `move-right` | - | Move cursor left / right |
@@ -220,6 +222,47 @@ Keys are written as hyphen-separated values: `[modifier-][modifier-]key`
 | `select-line-start` / `select-line-end` | - | Select to line start / end |
 | `move-doc-start` / `move-doc-end` | - | Move cursor to document start / end |
 | `add-cursor-above` / `add-cursor-below` | - | Add cursor above / below |
+
+---
+
+## Editor Configuration (`config.json`)
+
+`ie` supports global configuration through a `config.json` file located in the user configuration directory:
+
+| OS | Configuration Path |
+|---|---|
+| **Linux** | `~/.config/ie/config.json` |
+| **macOS** | `~/Library/Application Support/ie/config.json` |
+| **Windows** | `%APPDATA%\ie\config.json` |
+
+### Whitespace Visualization
+
+`ie` visualizes whitespace characters using customizable glyphs. By default:
+- Spaces are rendered as middle dots (`·`)
+- Tab fillers are rendered as spaces (` `)
+- Tab terminators are rendered as right tab arrows (`⇥`)
+
+You can customize these characters in `~/.config/ie/config.json`:
+
+```json
+{
+  "whitespace": {
+    "space": "·",
+    "tab_filler": " ",
+    "tab_terminator": "⇥"
+  }
+}
+```
+
+Or directly at the root level:
+
+```json
+{
+  "space": "·",
+  "tab_filler": " ",
+  "tab_terminator": "⇥"
+}
+```
 
 ---
 
