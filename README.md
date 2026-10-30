@@ -210,8 +210,8 @@ Keys are written as hyphen-separated values: `[modifier-][modifier-]key`
 | `redo` | - | Redo edit |
 | `select-all` | - | Select entire document |
 | `insert-newline` | `newline`, `enter` | Insert newline |
-| `insert-tab` | `tab` | Insert tab |
-| `insert-hard-tab` | `hard-tab`, `hardtab` | Insert literal hard tab (`\t`) |
+| `insert-tab` | `tab`, `add-tab`, `soft-tab` | Insert soft tab (spaces) |
+| `insert-hard-tab` | `hard-tab`, `hardtab`, `add-hard-tab` | Insert literal hard tab (`\t`) |
 | `delete-backward` | `backspace` | Delete previous character |
 | `delete-forward` | `delete` | Delete next character |
 | `move-left` / `move-right` | - | Move cursor left / right |

@@ -78,14 +78,16 @@ impl FromStr for IeAction {
             "add-line-below" => Ok(IeAction::AddLineBelow),
             "add-line-above" => Ok(IeAction::AddLineAbove),
             "toggle-comments" | "toggle-coments" => Ok(IeAction::ToggleComments),
-            "insert-hard-tab" | "hard-tab" | "hardtab" => Ok(IeAction::InsertHardTab),
+            "insert-hard-tab" | "hard-tab" | "hardtab" | "add-hard-tab" => Ok(IeAction::InsertHardTab),
 
             // Texera actions
             "undo" => Ok(IeAction::Texera(EditorAction::Undo)),
             "redo" => Ok(IeAction::Texera(EditorAction::Redo)),
             "select-all" => Ok(IeAction::Texera(EditorAction::SelectAll)),
             "insert-newline" | "newline" | "enter" => Ok(IeAction::Texera(EditorAction::InsertNewline)),
-            "insert-tab" | "tab" => Ok(IeAction::Texera(EditorAction::InsertTab)),
+            "insert-tab" | "tab" | "add-tab" | "soft-tab" | "softtab" | "insert-soft-tab" | "add-soft-tab" => {
+                Ok(IeAction::Texera(EditorAction::InsertTab))
+            }
             "delete-backward" | "backspace" => Ok(IeAction::Texera(EditorAction::DeleteBackward)),
             "delete-forward" | "delete" => Ok(IeAction::Texera(EditorAction::DeleteForward)),
             "move-left" => Ok(IeAction::Texera(EditorAction::MoveLeft)),
@@ -460,7 +462,15 @@ impl IeKeymap {
                 )
             })?;
 
-            bindings.insert(combo, action);
+            if combo.code == KeyCode::BackTab
+                || (combo.code == KeyCode::Tab && combo.modifiers.contains(KeyModifiers::SHIFT))
+            {
+                bindings.insert(KeyCombo::new(KeyCode::Tab, KeyModifiers::SHIFT), action);
+                bindings.insert(KeyCombo::new(KeyCode::BackTab, KeyModifiers::SHIFT), action);
+                bindings.insert(KeyCombo::new(KeyCode::BackTab, KeyModifiers::empty()), action);
+            } else {
+                bindings.insert(combo, action);
+            }
         }
 
         Ok(Self { bindings })
@@ -605,5 +615,23 @@ mod tests {
 
         let backtab_plain = KeyEvent::new(KeyCode::BackTab, KeyModifiers::empty());
         assert_eq!(keymap.action_for_key(&backtab_plain), Some(IeAction::InsertHardTab));
+    }
+
+    #[test]
+    fn custom_tab_hard_tab_and_shift_tab_soft_tab() {
+        let json = r#"{"mode": "extend", "keys": {"tab": "hard-tab", "shift-tab": "add-tab"}}"#;
+
+        let keymap = IeKeymap::from_json_str(json, Path::new("test.json")).unwrap();
+
+        // Plain tab triggers hard-tab
+        let tab_event = KeyEvent::new(KeyCode::Tab, KeyModifiers::empty());
+        assert_eq!(keymap.action_for_key(&tab_event), Some(IeAction::InsertHardTab));
+
+        // Shift-tab or BackTab triggers soft tab (add-tab / InsertTab)
+        let backtab_event = KeyEvent::new(KeyCode::BackTab, KeyModifiers::empty());
+        assert_eq!(keymap.action_for_key(&backtab_event), Some(IeAction::Texera(EditorAction::InsertTab)));
+
+        let shift_tab_event = KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT);
+        assert_eq!(keymap.action_for_key(&shift_tab_event), Some(IeAction::Texera(EditorAction::InsertTab)));
     }
 }
