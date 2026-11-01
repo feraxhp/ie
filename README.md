@@ -405,4 +405,8 @@ rules = [
 
 ---
 
-It uses [texera](https://github.com/feraxhp/texera).
+## Dependencies
+
+- [texera](https://github.com/feraxhp/texera).
+- [texera-core](https://github.com/feraxhp/texera).
+
