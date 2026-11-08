@@ -1,7 +1,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
-use texera::EditorViewState;
+use texera::{CellMetrics, EditorViewState};
 use texera_core::{Selection, State, tr};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -241,6 +241,7 @@ impl SearchState {
             .add_modifier(Modifier::BOLD);
 
         let doc = state.doc();
+        let tab_size = state.tab_size();
 
         for (idx, m) in self.matches.iter().enumerate() {
             let is_current = Some(idx) == self.current_match_idx;
@@ -256,21 +257,25 @@ impl SearchState {
                 }
 
                 let line_from = line.from();
-                let match_start_col = m.from.saturating_sub(line_from);
-                let match_end_col = m.to.saturating_sub(line_from);
+                let match_start_char = m.from.saturating_sub(line_from);
+                let match_end_char = m.to.saturating_sub(line_from);
+
+                let line_text = line.text_trimmed();
+                let start_vis_col = CellMetrics::char_index_to_column(&line_text, match_start_char, tab_size);
+                let end_vis_col = CellMetrics::char_index_to_column(&line_text, match_end_char, tab_size);
 
                 let y = editor_area.y + visual_row as u16;
 
-                for col in match_start_col..match_end_col {
-                    if col < scroll_x {
+                for visual_col in start_vis_col..end_vis_col {
+                    if visual_col < scroll_x {
                         continue;
                     }
-                    let visual_col = col - scroll_x;
-                    if visual_col >= text_area_width as usize {
+                    let screen_x_offset = visual_col - scroll_x;
+                    if screen_x_offset >= text_area_width as usize {
                         break;
                     }
 
-                    let x = text_start_x + visual_col as u16;
+                    let x = text_start_x + screen_x_offset as u16;
                     if x < editor_area.right() && y < editor_area.bottom() {
                         if let Some(cell) = buf.cell_mut((x, y)) {
                             cell.set_style(style);
@@ -348,5 +353,33 @@ mod tests {
         assert_eq!(search.query, "option");
         assert_eq!(search.matches.len(), 1);
         assert_eq!(search.matches[0].from, 14);
+    }
+
+    #[test]
+    fn test_render_subtle_highlights_with_tabs() {
+        let state = State::from("		foo
+");
+        let mut search = SearchState::new();
+        search.query = "foo".to_string();
+        search.open(&state);
+
+        let area = Rect::new(0, 0, 40, 5);
+        let mut buf = Buffer::empty(area);
+        let view_state = EditorViewState::new();
+
+        search.render_subtle_highlights(&mut buf, area, &state, &view_state, 0);
+
+        // With default tab_size of 4, two tabs occupy visual columns 0..8
+        // "foo" begins at visual column 8 and extends to 11
+        let cell_before = buf.cell((7, 0)).unwrap();
+        let cell_match1 = buf.cell((8, 0)).unwrap();
+        let cell_match2 = buf.cell((9, 0)).unwrap();
+        let cell_match3 = buf.cell((10, 0)).unwrap();
+        let cell_after = buf.cell((11, 0)).unwrap();
+
+        assert_ne!(cell_match1.style().bg, cell_before.style().bg);
+        assert_eq!(cell_match1.style().bg, cell_match2.style().bg);
+        assert_eq!(cell_match1.style().bg, cell_match3.style().bg);
+        assert_ne!(cell_match3.style().bg, cell_after.style().bg);
     }
 }
