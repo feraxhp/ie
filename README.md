@@ -105,7 +105,7 @@ ie --backup config.toml
 | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Up</kbd> | `clone-line-up` | Duplicate/clone current line up |
 | <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>Down</kbd> | `move-selection-down` | Move selected lines (or current line) down |
 | <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>Up</kbd> | `move-selection-up` | Move selected lines (or current line) up |
-| <kbd>Shift</kbd> + <kbd>c</kbd> / <kbd>Shift</kbd> + <kbd>k</kbd> | `toggle-comments` | Toggle comment on current line or selection |
+| <kbd>Ctrl</kbd> + <kbd>k</kbd> | `toggle-comments` | Toggle comment on current line or selection |
 
 ### Search Mode
 

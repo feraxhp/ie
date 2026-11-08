@@ -13,8 +13,8 @@ use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 
 use crossterm::event::{
-    self, Event, KeyCode, KeyModifiers, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
-    PushKeyboardEnhancementFlags,
+    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventState, KeyModifiers,
+    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -51,6 +51,7 @@ fn main() -> Result<(), mynox::Report> {
     std::panic::set_hook(Box::new(move |panic_info| {
         let _ = execute!(
             std::io::stdout(),
+            DisableBracketedPaste,
             PopKeyboardEnhancementFlags,
             crossterm::style::Print("\x1b[=0u"),
             LeaveAlternateScreen,
@@ -237,7 +238,8 @@ fn run() -> Result<i32, mynox::Error> {
     // Executed AFTER entering alternate screen in FULL mode (strict LIFO order).
     let _ = execute!(
         stdout(),
-        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES),
+        EnableBracketedPaste
     );
 
     let backend = CrosstermBackend::new(stdout());
@@ -250,7 +252,7 @@ fn run() -> Result<i32, mynox::Error> {
         ) {
             Ok(t) => t,
             Err(e) => {
-                let _ = execute!(stdout(), PopKeyboardEnhancementFlags, crossterm::style::Print("\x1b[=0u"));
+                let _ = execute!(stdout(), DisableBracketedPaste, PopKeyboardEnhancementFlags, crossterm::style::Print("\x1b[=0u"));
                 let _ = disable_raw_mode();
                 return Err(mynox::error!(
                     "tui::terminal",
@@ -264,6 +266,7 @@ fn run() -> Result<i32, mynox::Error> {
             Err(e) => {
                 let _ = execute!(
                     stdout(),
+                    DisableBracketedPaste,
                     PopKeyboardEnhancementFlags,
                     crossterm::style::Print("\x1b[=0u"),
                     LeaveAlternateScreen,
@@ -283,6 +286,7 @@ fn run() -> Result<i32, mynox::Error> {
     if let Err(e) = terminal.clear() {
         let _ = execute!(
             terminal.backend_mut(),
+            DisableBracketedPaste,
             PopKeyboardEnhancementFlags,
             crossterm::style::Print("\x1b[=0u")
         );
@@ -323,7 +327,7 @@ fn run() -> Result<i32, mynox::Error> {
 
     // 8. Clean exit and complete terminal restoration (strict LIFO order)
     // 8.1. Pop keyboard enhancement flags on the currently active screen buffer
-    let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
+    let _ = execute!(terminal.backend_mut(), DisableBracketedPaste, PopKeyboardEnhancementFlags);
     let _ = execute!(terminal.backend_mut(), crossterm::style::Print("\x1b[=0u"));
 
     // 8.2. Restore screen buffer
@@ -340,7 +344,7 @@ fn run() -> Result<i32, mynox::Error> {
     } else {
         let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
         // After returning to the main screen, also ensure no keyboard flags remain on the main screen
-        let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
+        let _ = execute!(terminal.backend_mut(), DisableBracketedPaste, PopKeyboardEnhancementFlags);
         let _ = execute!(terminal.backend_mut(), crossterm::style::Print("\x1b[=0u"));
     }
 
@@ -564,46 +568,74 @@ fn run_event_loop(
                 format!("Error while polling terminal events: {}", e)
             )
         })? {
-            if let Event::Key(key_event) = event::read().map_err(|e| {
+            match event::read().map_err(|e| {
                 mynox::error!(
                     "tui::event",
                     "Event read error",
-                    format!("Failed to read keyboard event: {}", e)
+                    format!("Failed to read terminal event: {}", e)
                 )
             })? {
-                // Ignore key release and repeat events to avoid duplicate triggers
-                if key_event.kind != crossterm::event::KeyEventKind::Press {
-                    continue;
+                Event::Paste(text) => {
+                    if search_state.is_active && search_state.focus == SearchFocus::SearchInput {
+                        search_state.query.insert_str(search_state.query_cursor, &text);
+                        search_state.query_cursor += text.chars().count();
+                        search_state.recompute_matches(state);
+                        search_state.apply_current_match(state);
+                    } else {
+                        let spec = state.replace_selection(&text);
+                        if let Ok(next) = state.clone().update(spec) {
+                            *state = next.into_state();
+                            unsaved_lines.check_dirty_lines(state);
+                            if search_state.is_active {
+                                search_state.recompute_matches(state);
+                            }
+                        }
+                    }
                 }
-
-                // If search mode is active and focused on search input
-                if search_state.is_active && search_state.focus == SearchFocus::SearchInput {
-                    // Check focus switch to editor (shift-e)
-                    if key_event.modifiers.contains(KeyModifiers::SHIFT)
-                        && (key_event.code == KeyCode::Char('e') || key_event.code == KeyCode::Char('E'))
-                        || key_event.code == KeyCode::Char('E')
-                    {
-                        search_state.focus = SearchFocus::Editor;
+                Event::Key(mut key_event) => {
+                    // Ignore key release and repeat events to avoid duplicate triggers
+                    if key_event.kind != crossterm::event::KeyEventKind::Press {
                         continue;
                     }
 
-                    // Check navigation within search mode (shift-n)
-                    if key_event.modifiers.contains(KeyModifiers::SHIFT)
-                        && (key_event.code == KeyCode::Char('n') || key_event.code == KeyCode::Char('N'))
-                        || key_event.code == KeyCode::Char('N')
-                    {
-                        search_state.next_match(state);
-                        continue;
+                    let is_caps_lock = key_event.state.contains(KeyEventState::CAPS_LOCK);
+
+                    // If Caps Lock is active and Shift was not held, ensure character code is uppercase
+                    // so that texera inserts the proper uppercase character.
+                    if is_caps_lock && !key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                        if let KeyCode::Char(c) = key_event.code {
+                            key_event.code = KeyCode::Char(c.to_ascii_uppercase());
+                        }
                     }
 
-                    // Check navigation within search mode (shift-p)
-                    if key_event.modifiers.contains(KeyModifiers::SHIFT)
-                        && (key_event.code == KeyCode::Char('p') || key_event.code == KeyCode::Char('P'))
-                        || key_event.code == KeyCode::Char('P')
-                    {
-                        search_state.prev_match(state);
-                        continue;
-                    }
+                    // If search mode is active and focused on search input
+                    if search_state.is_active && search_state.focus == SearchFocus::SearchInput {
+                        // Check focus switch to editor (shift-e) - only when Shift is actually held
+                        if !is_caps_lock
+                            && key_event.modifiers.contains(KeyModifiers::SHIFT)
+                            && (key_event.code == KeyCode::Char('e') || key_event.code == KeyCode::Char('E'))
+                        {
+                            search_state.focus = SearchFocus::Editor;
+                            continue;
+                        }
+
+                        // Check navigation within search mode (shift-n) - only when Shift is actually held
+                        if !is_caps_lock
+                            && key_event.modifiers.contains(KeyModifiers::SHIFT)
+                            && (key_event.code == KeyCode::Char('n') || key_event.code == KeyCode::Char('N'))
+                        {
+                            search_state.next_match(state);
+                            continue;
+                        }
+
+                        // Check navigation within search mode (shift-p) - only when Shift is actually held
+                        if !is_caps_lock
+                            && key_event.modifiers.contains(KeyModifiers::SHIFT)
+                            && (key_event.code == KeyCode::Char('p') || key_event.code == KeyCode::Char('P'))
+                        {
+                            search_state.prev_match(state);
+                            continue;
+                        }
 
                     if key_event.code == KeyCode::Esc {
                         search_state.close();
@@ -914,6 +946,8 @@ fn run_event_loop(
                         }
                     }
                 }
+            }
+                _ => {}
             }
         }
     }

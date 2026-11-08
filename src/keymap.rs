@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 use std::str::FromStr;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventState, KeyModifiers};
 use mynox::Error;
 use serde::{Deserialize, Serialize};
 use texera::EditorAction;
@@ -126,14 +126,26 @@ impl KeyCombo {
     /// Converts a crossterm KeyEvent to a normalized KeyCombo.
     pub fn from_event(event: &KeyEvent) -> Self {
         let mut modifiers = event.modifiers;
-        // Normalize: crossterm sometimes reports Shift modifier with uppercase Char
+        let is_caps_lock = event.state.contains(KeyEventState::CAPS_LOCK);
+
+        // Normalize character code:
+        // When Shift is pressed (and not solely Caps Lock), normalize uppercase char
+        // to lowercase so it matches keybindings defined with lowercase (e.g., "ctrl-shift-z").
+        // If Caps Lock is active without Shift, or if Shift was not held, do NOT treat this as a Shift shortcut.
         let code = match event.code {
-            KeyCode::Char(c) if c.is_ascii_uppercase() => {
-                modifiers.insert(KeyModifiers::SHIFT);
+            KeyCode::Char(c) if modifiers.contains(KeyModifiers::SHIFT) && !is_caps_lock => {
                 KeyCode::Char(c.to_ascii_lowercase())
+            }
+            KeyCode::Char(c) if is_caps_lock => {
+                modifiers.remove(KeyModifiers::SHIFT);
+                KeyCode::Char(c)
             }
             other => other,
         };
+
+        if is_caps_lock && !event.modifiers.contains(KeyModifiers::SHIFT) {
+            modifiers.remove(KeyModifiers::SHIFT);
+        }
 
         // Filter only recognized modifier bits
         let clean_mods =
@@ -195,6 +207,19 @@ impl FromStr for KeyCombo {
             }
             unknown => return Err(format!("Unknown key code: '{}'", unknown)),
         };
+
+        // Guard against bare shift on basic characters:
+        // Shortcuts like "shift-c" or "shift-k" conflict with typing uppercase characters.
+        // Combinations with characters require at least one other modifier (e.g., Ctrl, Alt, Super).
+        if let KeyCode::Char(_) = code {
+            let other_mods = modifiers & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
+            if modifiers.contains(KeyModifiers::SHIFT) && other_mods.is_empty() {
+                return Err(format!(
+                    "Invalid key combo '{}': 'shift-<char>' is not permitted for single characters because it conflicts with normal typing. Use a co-modifier like 'ctrl-shift-{}' or 'alt-{}'.",
+                    s, key_str, key_str
+                ));
+            }
+        }
 
         Ok(Self { code, modifiers })
     }
@@ -282,7 +307,7 @@ impl IeKeymap {
         fallback.to_string()
     }
 
-    /// Default keybindings defined for `ie``.
+    /// Default keybindings defined for `ie``.\n    pub fn default_bindings() -> HashMap<KeyCombo, IeAction> {
     pub fn default_bindings() -> HashMap<KeyCombo, IeAction> {
         let mut map = HashMap::new();
 
@@ -354,14 +379,7 @@ impl IeKeymap {
         map.insert(KeyCombo::new(KeyCode::Enter, KeyModifiers::CONTROL), IeAction::AddLineAbove);
 
         // Toggle comments
-        map.insert(KeyCombo::new(KeyCode::Char('c'), KeyModifiers::SHIFT), IeAction::ToggleComments);
-        map.insert(KeyCombo::new(KeyCode::Char('k'), KeyModifiers::SHIFT), IeAction::ToggleComments);
-        
-        // Search mode navigation
-        map.insert(KeyCombo::new(KeyCode::Char('n'), KeyModifiers::SHIFT), IeAction::NextMatch);
-        map.insert(KeyCombo::new(KeyCode::Char('p'), KeyModifiers::SHIFT), IeAction::PrevMatch);
-        map.insert(KeyCombo::new(KeyCode::Char('e'), KeyModifiers::SHIFT), IeAction::FocusEditor);
-        map.insert(KeyCombo::new(KeyCode::Char('s'), KeyModifiers::SHIFT), IeAction::FocusSearch);
+        map.insert(KeyCombo::new(KeyCode::Char('k'), KeyModifiers::CONTROL), IeAction::ToggleComments);
 
         map
     }
@@ -398,10 +416,17 @@ impl IeKeymap {
         let clean_mods = event.modifiers
             & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT | KeyModifiers::SUPER);
 
-        if clean_mods.is_empty() || clean_mods == KeyModifiers::SHIFT {
-            if let KeyCode::Char(_) = event.code {
+        // Single characters typed without modifiers or with only Shift (e.g., uppercase letter)
+        // are standard character insertion and are never intercepted as action shortcuts.
+        if let KeyCode::Char(_) = event.code {
+            if clean_mods.is_empty() || clean_mods == KeyModifiers::SHIFT {
                 return Some(IeAction::Texera(EditorAction::InsertChar));
             }
+        }
+
+        let combo = KeyCombo::from_event(event);
+        if let Some(action) = self.bindings.get(&combo).copied() {
+            return Some(action);
         }
 
         None
@@ -487,15 +512,76 @@ mod tests {
         assert_eq!(keymap.key_for_action(IeAction::Abort, "ctrl-c"), "ctrl-c");
         assert_eq!(keymap.key_for_action(IeAction::SaveFile, "ctrl-s"), "ctrl-s");
         assert_eq!(keymap.key_for_action(IeAction::Escape, "esc"), "esc");
+        assert_eq!(keymap.key_for_action(IeAction::ToggleComments, "ctrl-k"), "ctrl-k");
     }
 
     #[test]
-    fn test_shift_c_matches_toggle_comments() {
+    fn test_ctrl_k_matches_toggle_comments() {
         let keymap = IeKeymap::default();
 
-        // When crossterm delivers KeyCode::Char('c') with CONTROL | SHIFT
-        let event2 = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::SHIFT);
-        assert_eq!(keymap.action_for_key(&event2), Some(IeAction::ToggleComments));
+        let event = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        assert_eq!(keymap.action_for_key(&event), Some(IeAction::ToggleComments));
+    }
+
+    #[test]
+    fn test_shift_c_inserts_char() {
+        let keymap = IeKeymap::default();
+
+        // When user types 'c' or 'C' with Shift or Caps Lock, it inserts character
+        let event = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::SHIFT);
+        assert_eq!(keymap.action_for_key(&event), Some(IeAction::Texera(EditorAction::InsertChar)));
+
+        let event_upper = KeyEvent::new(KeyCode::Char('C'), KeyModifiers::SHIFT);
+        assert_eq!(keymap.action_for_key(&event_upper), Some(IeAction::Texera(EditorAction::InsertChar)));
+    }
+
+    #[test]
+    fn test_caps_lock_c_inserts_char() {
+        let keymap = IeKeymap::default();
+
+        let event_lower = KeyEvent::new_with_kind_and_state(
+            KeyCode::Char('c'),
+            KeyModifiers::empty(),
+            crossterm::event::KeyEventKind::Press,
+            KeyEventState::CAPS_LOCK,
+        );
+        assert_eq!(
+            keymap.action_for_key(&event_lower),
+            Some(IeAction::Texera(EditorAction::InsertChar))
+        );
+
+        let event_upper = KeyEvent::new_with_kind_and_state(
+            KeyCode::Char('C'),
+            KeyModifiers::empty(),
+            crossterm::event::KeyEventKind::Press,
+            KeyEventState::CAPS_LOCK,
+        );
+        assert_eq!(
+            keymap.action_for_key(&event_upper),
+            Some(IeAction::Texera(EditorAction::InsertChar))
+        );
+    }
+
+    #[test]
+    fn test_pasted_uppercase_c_inserts_char() {
+        let keymap = IeKeymap::default();
+
+        // When character 'C' arrives without Shift (e.g. from paste stream or raw input)
+        let event = KeyEvent::new(KeyCode::Char('C'), KeyModifiers::empty());
+        assert_eq!(
+            keymap.action_for_key(&event),
+            Some(IeAction::Texera(EditorAction::InsertChar))
+        );
+    }
+
+    #[test]
+    fn test_shift_char_forbidden_in_keycombo_parse() {
+        assert!(KeyCombo::from_str("shift-c").is_err());
+        assert!(KeyCombo::from_str("shift-k").is_err());
+        // Arrow keys and other non-chars with shift are allowed
+        assert!(KeyCombo::from_str("shift-enter").is_ok());
+        assert!(KeyCombo::from_str("shift-left").is_ok());
+        assert!(KeyCombo::from_str("ctrl-shift-c").is_ok());
     }
 
     #[test]
@@ -575,7 +661,7 @@ mod tests {
 
     #[test]
     fn test_keymap_mode_extend() {
-        let json = r#"{"mode": "extend", "keys": {"ctrl-s": "save-file", "ctrl-k": "delete-line"}}"#;
+        let json = r#"{"mode": "extend", "keys": {"ctrl-s": "save-file", "ctrl-d": "delete-line"}}"#;
 
         let keymap = IeKeymap::from_json_str(json, Path::new("test.json")).unwrap();
         // Preserves default bindings
@@ -587,8 +673,8 @@ mod tests {
         assert_eq!(keymap.bindings.get(&f6_combo), Some(&IeAction::DecreaseLines));
 
         // Overrides or adds new keys
-        let ctrl_k = KeyCombo::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
-        assert_eq!(keymap.bindings.get(&ctrl_k), Some(&IeAction::DeleteLine));
+        let ctrl_d = KeyCombo::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
+        assert_eq!(keymap.bindings.get(&ctrl_d), Some(&IeAction::DeleteLine));
     }
 
     #[test]
