@@ -112,10 +112,10 @@ ie --backup config.toml
 | Shortcut | Action | Description |
 |---|---|---|
 | <kbd>Ctrl</kbd> + <kbd>f</kbd> | `search` | Open search prompt |
-| <kbd>Shift</kbd> + <kbd>n</kbd> | `next-match` | Go to next search match |
-| <kbd>Shift</kbd> + <kbd>p</kbd> | `prev-match` | Go to previous search match |
-| <kbd>Shift</kbd> + <kbd>e</kbd> | `focus-editor` | Focus editor while search bar remains open |
-| <kbd>Shift</kbd> + <kbd>s</kbd> | `focus-search` | Focus search bar input |
+| <kbd>Ctrl</kbd> + <kbd>n</kbd> | `next-match` | Go to next search match |
+| <kbd>Ctrl</kbd> + <kbd>p</kbd> | `prev-match` | Go to previous search match |
+| <kbd>Ctrl</kbd> + <kbd>e</kbd> | `focus-editor` | Focus editor while search bar remains open |
+| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>s</kbd> | `focus-search` | Focus search bar input |
 
 ### General & View Controls
 
@@ -129,6 +129,7 @@ ie --backup config.toml
 | <kbd>F3</kbd> | `toggle-wrap` | Toggle soft line wrapping |
 | <kbd>F5</kbd> | `increase-lines` | Increase inline viewport height by 1 line (inline mode only) |
 | <kbd>F6</kbd> | `decrease-lines` | Decrease inline viewport height by 1 line (inline mode only) |
+| <kbd>F11</kbd> | `toggle-fullscreen` | Toggle between fullscreen (alternate screen) and inline mode |
 
 ---
 
@@ -191,6 +192,7 @@ Keys are written as hyphen-separated values: `[modifier-][modifier-]key`
 | `toggle-help` | `toggle-hints`, `help` | Toggle status and shortcut help bar |
 | `toggle-gutter` | - | Toggle line numbers / gutter |
 | `toggle-wrap` | - | Toggle soft line wrap |
+| `toggle-fullscreen` | `toggle-alternate-screen`, `fullscreen` | Toggle between fullscreen and inline mode |
 | `increase-lines` | `add-line`, `increase-inline-lines` | Increase inline viewport height by 1 line |
 | `decrease-lines` | `remove-line`, `decrease-inline-lines` | Decrease inline viewport height by 1 line |
 | `search` | - | Open search dialog |

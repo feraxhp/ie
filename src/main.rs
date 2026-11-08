@@ -385,6 +385,10 @@ fn run_event_loop(
     let mut show_help = false;
     let mut backup_done = false;
     let mut rendered_area = Rect::default();
+    let mut saved_inline_lines: u16 = match *mode {
+        TUImode::INLINE(lines) => lines,
+        TUImode::FULL => 8,
+    };
 
     loop {
         terminal
@@ -474,9 +478,9 @@ fn run_event_loop(
 
                             let esc_key = keymap.key_for_action(IeAction::Escape, "esc");
                             let hints = if search_state.focus == SearchFocus::SearchInput {
-                                format!("  (shift-e: editor | shift-n: next | shift-p: prev | {}: close search)", esc_key)
+                                format!("  (ctrl-e: editor | ctrl-n: next | ctrl-p: prev | {}: close search)", esc_key)
                             } else {
-                                format!("  (shift-s: search | shift-n: next | shift-p: prev | {}: close search)", esc_key)
+                                format!("  (ctrl-shift-s: search | ctrl-n: next | ctrl-p: prev | {}: close search)", esc_key)
                             };
 
                             let spans = if search_state.focus == SearchFocus::SearchInput {
@@ -610,27 +614,24 @@ fn run_event_loop(
 
                     // If search mode is active and focused on search input
                     if search_state.is_active && search_state.focus == SearchFocus::SearchInput {
-                        // Check focus switch to editor (shift-e) - only when Shift is actually held
-                        if !is_caps_lock
-                            && key_event.modifiers.contains(KeyModifiers::SHIFT)
+                        // Check focus switch to editor (ctrl-e)
+                        if key_event.modifiers.contains(KeyModifiers::CONTROL)
                             && (key_event.code == KeyCode::Char('e') || key_event.code == KeyCode::Char('E'))
                         {
                             search_state.focus = SearchFocus::Editor;
                             continue;
                         }
 
-                        // Check navigation within search mode (shift-n) - only when Shift is actually held
-                        if !is_caps_lock
-                            && key_event.modifiers.contains(KeyModifiers::SHIFT)
+                        // Check navigation within search mode: next match (ctrl-n)
+                        if key_event.modifiers.contains(KeyModifiers::CONTROL)
                             && (key_event.code == KeyCode::Char('n') || key_event.code == KeyCode::Char('N'))
                         {
                             search_state.next_match(state);
                             continue;
                         }
 
-                        // Check navigation within search mode (shift-p) - only when Shift is actually held
-                        if !is_caps_lock
-                            && key_event.modifiers.contains(KeyModifiers::SHIFT)
+                        // Check navigation within search mode: prev match (ctrl-p)
+                        if key_event.modifiers.contains(KeyModifiers::CONTROL)
                             && (key_event.code == KeyCode::Char('p') || key_event.code == KeyCode::Char('P'))
                         {
                             search_state.prev_match(state);
@@ -746,6 +747,42 @@ fn run_event_loop(
                         }
                         IeAction::ToggleWrap => {
                             wrap_enabled = !wrap_enabled;
+                            continue;
+                        }
+                        IeAction::ToggleFullscreen => {
+                            match *mode {
+                                TUImode::INLINE(lines) => {
+                                    saved_inline_lines = lines;
+                                    let _ = execute!(
+                                        terminal.backend_mut(),
+                                        crossterm::cursor::MoveTo(0, rendered_area.y),
+                                        crossterm::terminal::Clear(crossterm::terminal::ClearType::FromCursorDown),
+                                        EnterAlternateScreen,
+                                    );
+                                    if let Ok(mut new_term) = Terminal::new(CrosstermBackend::new(stdout())) {
+                                        let _ = new_term.clear();
+                                        *terminal = new_term;
+                                        *mode = TUImode::FULL;
+                                    }
+                                }
+                                TUImode::FULL => {
+                                    let target_lines = saved_inline_lines.max(2);
+                                    let _ = execute!(
+                                        terminal.backend_mut(),
+                                        LeaveAlternateScreen,
+                                    );
+                                    if let Ok(mut new_term) = Terminal::with_options(
+                                        CrosstermBackend::new(stdout()),
+                                        TerminalOptions {
+                                            viewport: Viewport::Inline(target_lines),
+                                        },
+                                    ) {
+                                        let _ = new_term.clear();
+                                        *terminal = new_term;
+                                        *mode = TUImode::INLINE(target_lines);
+                                    }
+                                }
+                            }
                             continue;
                         }
                         IeAction::IncreaseLines => {

@@ -20,6 +20,7 @@ pub enum IeAction {
     ToggleHelp,
     ToggleGutter,
     ToggleWrap,
+    ToggleFullscreen,
 
     // Viewport actions (inline mode)
     IncreaseLines,
@@ -60,6 +61,7 @@ impl FromStr for IeAction {
             "toggle-help" | "toggle-hints" | "help" => Ok(IeAction::ToggleHelp),
             "toggle-gutter" => Ok(IeAction::ToggleGutter),
             "toggle-wrap" => Ok(IeAction::ToggleWrap),
+            "toggle-fullscreen" | "toggle-alternate-screen" | "fullscreen" => Ok(IeAction::ToggleFullscreen),
 
             "increase-lines" | "add-line" | "increase-inline-lines" => Ok(IeAction::IncreaseLines),
             "decrease-lines" | "remove-line" | "decrease-inline-lines" => Ok(IeAction::DecreaseLines),
@@ -357,10 +359,17 @@ impl IeKeymap {
         map.insert(KeyCombo::new(KeyCode::F(3), KeyModifiers::empty()), IeAction::ToggleWrap);
         map.insert(KeyCombo::new(KeyCode::F(5), KeyModifiers::empty()), IeAction::IncreaseLines);
         map.insert(KeyCombo::new(KeyCode::F(6), KeyModifiers::empty()), IeAction::DecreaseLines);
+        map.insert(KeyCombo::new(KeyCode::F(11), KeyModifiers::empty()), IeAction::ToggleFullscreen);
 
         // Requested specific features
         // Search dialog (ctrl-f / ctr-f)
         map.insert(KeyCombo::new(KeyCode::Char('f'), KeyModifiers::CONTROL), IeAction::Search);
+
+        // Search navigation & focus controls (using ctrl modifier to prevent conflicts)
+        map.insert(KeyCombo::new(KeyCode::Char('n'), KeyModifiers::CONTROL), IeAction::NextMatch);
+        map.insert(KeyCombo::new(KeyCode::Char('p'), KeyModifiers::CONTROL), IeAction::PrevMatch);
+        map.insert(KeyCombo::new(KeyCode::Char('e'), KeyModifiers::CONTROL), IeAction::FocusEditor);
+        map.insert(KeyCombo::new(KeyCode::Char('s'), KeyModifiers::CONTROL | KeyModifiers::SHIFT), IeAction::FocusSearch);
 
         // Clone lines
         map.insert(KeyCombo::new(KeyCode::Down, KeyModifiers::CONTROL | KeyModifiers::SHIFT), IeAction::CloneLineDown);
@@ -513,6 +522,11 @@ mod tests {
         assert_eq!(keymap.key_for_action(IeAction::SaveFile, "ctrl-s"), "ctrl-s");
         assert_eq!(keymap.key_for_action(IeAction::Escape, "esc"), "esc");
         assert_eq!(keymap.key_for_action(IeAction::ToggleComments, "ctrl-k"), "ctrl-k");
+        assert_eq!(keymap.key_for_action(IeAction::ToggleFullscreen, "f11"), "f11");
+        assert_eq!(keymap.key_for_action(IeAction::NextMatch, "ctrl-n"), "ctrl-n");
+        assert_eq!(keymap.key_for_action(IeAction::PrevMatch, "ctrl-p"), "ctrl-p");
+        assert_eq!(keymap.key_for_action(IeAction::FocusEditor, "ctrl-e"), "ctrl-e");
+        assert_eq!(keymap.key_for_action(IeAction::FocusSearch, "ctrl-shift-s"), "ctrl-shift-s");
     }
 
     #[test]
@@ -521,6 +535,14 @@ mod tests {
 
         let event = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
         assert_eq!(keymap.action_for_key(&event), Some(IeAction::ToggleComments));
+    }
+
+    #[test]
+    fn test_f11_matches_toggle_fullscreen() {
+        let keymap = IeKeymap::default();
+
+        let event = KeyEvent::new(KeyCode::F(11), KeyModifiers::empty());
+        assert_eq!(keymap.action_for_key(&event), Some(IeAction::ToggleFullscreen));
     }
 
     #[test]
@@ -639,15 +661,22 @@ mod tests {
         assert_eq!(combo.code, KeyCode::F(5));
         let combo = KeyCombo::from_str("f6").unwrap();
         assert_eq!(combo.code, KeyCode::F(6));
+        let combo = KeyCombo::from_str("f11").unwrap();
+        assert_eq!(combo.code, KeyCode::F(11));
     }
 
     #[test]
     fn test_parse_actions() {
         assert_eq!(IeAction::from_str("search").unwrap(), IeAction::Search);
+        assert_eq!(IeAction::from_str("next-match").unwrap(), IeAction::NextMatch);
+        assert_eq!(IeAction::from_str("prev-match").unwrap(), IeAction::PrevMatch);
+        assert_eq!(IeAction::from_str("focus-editor").unwrap(), IeAction::FocusEditor);
+        assert_eq!(IeAction::from_str("focus-search").unwrap(), IeAction::FocusSearch);
         assert_eq!(IeAction::from_str("clone-line-down").unwrap(), IeAction::CloneLineDown);
         assert_eq!(IeAction::from_str("move-selection-down").unwrap(), IeAction::MoveSelectionDown);
         assert_eq!(IeAction::from_str("toggle-comments").unwrap(), IeAction::ToggleComments);
         assert_eq!(IeAction::from_str("toggle-coments").unwrap(), IeAction::ToggleComments);
+        assert_eq!(IeAction::from_str("toggle-fullscreen").unwrap(), IeAction::ToggleFullscreen);
         assert_eq!(IeAction::from_str("save-file").unwrap(), IeAction::SaveFile);
         assert_eq!(IeAction::from_str("exit").unwrap(), IeAction::Exit);
         assert_eq!(IeAction::from_str("quit").unwrap(), IeAction::Exit);
@@ -671,6 +700,8 @@ mod tests {
         assert_eq!(keymap.bindings.get(&f5_combo), Some(&IeAction::IncreaseLines));
         let f6_combo = KeyCombo::new(KeyCode::F(6), KeyModifiers::empty());
         assert_eq!(keymap.bindings.get(&f6_combo), Some(&IeAction::DecreaseLines));
+        let f11_combo = KeyCombo::new(KeyCode::F(11), KeyModifiers::empty());
+        assert_eq!(keymap.bindings.get(&f11_combo), Some(&IeAction::ToggleFullscreen));
 
         // Overrides or adds new keys
         let ctrl_d = KeyCombo::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
