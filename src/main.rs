@@ -677,7 +677,17 @@ fn run_event_loop(
                     }
 
                     if key_event.code == KeyCode::Right {
-                        search_state.query_cursor = (search_state.query_cursor + 1).min(search_state.query.len());
+                        search_state.query_cursor = (search_state.query_cursor + 1).min(search_state.query.chars().count());
+                        continue;
+                    }
+
+                    if key_event.code == KeyCode::Home {
+                        search_state.query_cursor = 0;
+                        continue;
+                    }
+
+                    if key_event.code == KeyCode::End {
+                        search_state.query_cursor = search_state.query.chars().count();
                         continue;
                     }
 
